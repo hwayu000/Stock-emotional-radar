@@ -1,0 +1,17 @@
+# GDELT 回應快取（每日重新抓取）
+cache/
+
+# 本機私人筆記（方法細節，不上傳）
+NOTES.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 產出的數據（可選：若想讓 GitHub Pages 直接展示，移除下面這行）
+# ui/data.js
+
+# OS
+Thumbs.db
+.DS_Store
