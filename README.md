@@ -13,8 +13,8 @@ pip install -r requirements.txt
 python radar.py
 
 # 2. 打開儀表板
-start ui\index.html        # Windows
-# open ui/index.html       # macOS
+start docs\index.html      # Windows
+# open docs/index.html     # macOS
 ```
 
 > 上游 API 有限流。腳本內建磁碟快取（`cache/`）與自動退避重試，
@@ -39,9 +39,9 @@ start ui\index.html        # Windows
 
 ## 部署到 GitHub Pages
 
-`ui/` 是純靜態頁面。把倉庫推上 GitHub 後，到 Settings → Pages
-選擇分支與 `/ui` 目錄（或用 Actions 把 `ui/` 發佈出去）即可。
-頁面顯示的數據是你 commit 當下的 `ui/data.js`；要更新就重跑
+`docs/` 是純靜態頁面。把倉庫推上 GitHub 後，到 Settings → Pages
+選擇 `main` 分支 + `/docs` 目錄即可。
+頁面顯示的數據是你 commit 當下的 `docs/data.js`；要更新就重跑
 `python radar.py` 後再 commit + push。
 
 ## 注意事項

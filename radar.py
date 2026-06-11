@@ -384,12 +384,12 @@ def main():
     vol, tone = fetch_pair(BTC)
     result["assets"].append(analyze(BTC, vol, tone))
 
-    os.makedirs("ui", exist_ok=True)
-    with open("ui/data.js", "w", encoding="utf-8") as f:
+    os.makedirs("docs", exist_ok=True)
+    with open("docs/data.js", "w", encoding="utf-8") as f:
         f.write("window.RADAR_DATA = ")
         json.dump(result, f, ensure_ascii=False)
         f.write(";")
-    print("\n已輸出 ui/data.js")
+    print("\n已輸出 docs/data.js")
 
 
 if __name__ == "__main__":

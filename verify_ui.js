@@ -52,9 +52,9 @@ const matchMediaStub = () => ({ matches: false });
 const getComputedStyleStub = () => ({ getPropertyValue: () => '#888888' });
 const windowStub = { devicePixelRatio: 1, matchMedia: matchMediaStub };
 
-new Function('window', fs.readFileSync('ui/data.js', 'utf8'))(windowStub);
+new Function('window', fs.readFileSync('docs/data.js', 'utf8'))(windowStub);
 
-const html = fs.readFileSync('ui/index.html', 'utf8');
+const html = fs.readFileSync('docs/index.html', 'utf8');
 const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   .map(m => m[1]).filter(s => s.trim());
 const main = blocks[blocks.length - 1];
