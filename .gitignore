@@ -4,6 +4,9 @@ cache/
 # 本機私人筆記（方法細節，不上傳）
 NOTES.md
 
+# Telegram 警報設定（含 bot token，絕不上傳）
+alert_config.json
+
 # Python
 __pycache__/
 *.pyc

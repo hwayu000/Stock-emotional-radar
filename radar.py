@@ -333,6 +333,97 @@ def fetch_pair(meta: dict):
     return vol, tone
 
 
+# ---------- Telegram 警報 ----------
+
+ALERT_CONFIG = "alert_config.json"
+ATTN_THRESHOLD = 2.0
+
+
+def flatten_assets(result: dict) -> list:
+    out = []
+    for a in result["assets"]:
+        out.extend(a["members"] if a.get("is_group") else [a])
+    return out
+
+
+def prior_breach_date(dates, values, thresholds):
+    """跳過最近的連續觸發段後，往回找上一次突破的日期（不含本次）"""
+    n = len(values)
+
+    def exceed(i):
+        v = values[i]
+        t = thresholds[i] if isinstance(thresholds, list) else thresholds
+        if i >= len(dates):
+            return False
+        return v is not None and t is not None and v > t
+
+    i = n - 1
+    while i >= 0 and exceed(i):
+        i -= 1
+    while i >= 0 and not exceed(i):
+        i -= 1
+    return dates[i] if i >= 0 else None
+
+
+def days_ago_str(date_str):
+    if not date_str:
+        return "近一年內首次"
+    d = (pd.Timestamp.now().normalize() - pd.Timestamp(date_str)).days
+    return f"{date_str}（{d} 天前）"
+
+
+def build_alert_text(result: dict) -> str:
+    blocks = []
+    for a in flatten_assets(result):
+        lines = []
+        dates, latest = a["dates"], a["latest"]
+        if a["alerts"].get("attention_spike"):
+            prior = prior_breach_date(dates, a["attn_z"], ATTN_THRESHOLD)
+            lines.append(
+                "• 觸發：新聞注意力激增\n"
+                f"  目前注意力指數：{latest['attn_z']}（警戒值 {ATTN_THRESHOLD:.2f}，平時約 0）\n"
+                f"  上次同級激增：{days_ago_str(prior)}"
+            )
+        if a["alerts"].get("kl_breach"):
+            prior = prior_breach_date(dates, a["kl"], a.get("kl_q95") or [])
+            lines.append(
+                "• 觸發：散度突破警戒線（媒體敘事異常轉變）\n"
+                f"  目前散度：{latest['kl']}（警戒線 {latest['kl_q95']}）\n"
+                f"  上次突破：{days_ago_str(prior)}"
+            )
+        if lines:
+            lines.append(f"• 媒體語調：{latest['tone']}（正偏多／負偏空）")
+            blocks.append(f"【{a['name']}】\n" + "\n".join(lines))
+    if not blocks:
+        return ""
+    head = f"⚠️ Ashdata 注意力雷達 警報\n數據時間：{result['generated']}\n"
+    return head + "\n\n" + "\n\n".join(blocks)
+
+
+def send_telegram(text: str) -> bool:
+    if not os.path.exists(ALERT_CONFIG):
+        print("（未設定 alert_config.json，略過 Telegram 警報）")
+        return False
+    with open(ALERT_CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    url = f"https://api.telegram.org/bot{cfg['telegram_bot_token']}/sendMessage"
+    data = urllib.parse.urlencode(
+        {"chat_id": cfg["telegram_chat_id"], "text": text}
+    ).encode()
+    req = urllib.request.Request(url, data=data, headers=UA)
+    resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
+    return bool(resp.get("ok"))
+
+
+def run_alerts(result: dict):
+    text = build_alert_text(result)
+    if not text:
+        print("無警報觸發，不發送 Telegram")
+        return
+    ok = send_telegram(text)
+    print("Telegram 警報已發送" if ok else "Telegram 發送失敗")
+
+
 def main():
     result = {"generated": END.strftime("%Y-%m-%d %H:%M"), "assets": []}
 
@@ -390,7 +481,20 @@ def main():
         json.dump(result, f, ensure_ascii=False)
         f.write(";")
     print("\n已輸出 docs/data.js")
+    run_alerts(result)
+
+
+def alert_only():
+    """py radar.py --alert-only：不重抓數據，直接用現有 docs/data.js 檢查並發警報"""
+    with open("docs/data.js", encoding="utf-8") as f:
+        raw = f.read()
+    result = json.loads(raw[raw.index("=") + 1:].rstrip().rstrip(";"))
+    run_alerts(result)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--alert-only" in sys.argv:
+        alert_only()
+    else:
+        main()
