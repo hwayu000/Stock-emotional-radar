@@ -56,7 +56,7 @@ UA = {"User-Agent": "Mozilla/5.0 (attention-radar research script)"}
 
 # ---------- HTTP / 快取 ----------
 
-def http_get(url: str, retries: int = 12, backoff: float = 20.0, expect_json: bool = False) -> str:
+def http_get(url: str, retries: int = 14, backoff: float = 20.0, expect_json: bool = False) -> str:
     req = urllib.request.Request(url, headers=UA)
     for attempt in range(retries):
         try:
@@ -68,7 +68,7 @@ def http_get(url: str, retries: int = 12, backoff: float = 20.0, expect_json: bo
             return raw
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < retries - 1:
-                wait = min(backoff * (1.5 ** attempt), 120)
+                wait = min(backoff * (1.5 ** attempt), 180)
                 print(f"  限流(429)，等待 {wait:.0f}s 後重試...")
                 time.sleep(wait)
                 continue
