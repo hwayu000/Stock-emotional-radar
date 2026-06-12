@@ -356,12 +356,13 @@ function palette(){
 
 /* ================= Header 時間 ================= */
 function buildStamp(){
-  const gen = new Date(D.generated.replace(' ','T'));
+  const gen = D.generated_utc ? new Date(D.generated_utc) : new Date(D.generated.replace(' ','T'));
+  const disp = gen.toLocaleString('sv-SE').slice(0,16);
   const hrs = Math.max(0, (Date.now() - gen.getTime()) / 36e5);
   const rel = hrs < 1 ? `${Math.round(hrs*60)} 分鐘前` :
               hrs < 24 ? `${hrs.toFixed(1)} 小時前` : `${(hrs/24).toFixed(1)} 天前`;
-  const stale = hrs > 24 ? `<br><span class="stale">數據已超過 24 小時，建議重跑 radar.py</span>` : '';
-  $('stamp').innerHTML = `最後更新 ${D.generated}<br>（${rel}）${stale}`;
+  const stale = hrs > 8 ? `<br><span class="stale">數據已超過 8 小時未更新，自動更新可能失敗</span>` : '';
+  $('stamp').innerHTML = `最後更新 ${disp}<br>（${rel} · 每 6 小時自動更新）${stale}`;
 }
 
 /* ================= Segmented ================= */

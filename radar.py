@@ -372,19 +372,32 @@ def days_ago_str(date_str):
     return f"{date_str}（{d} 天前）"
 
 
-def build_alert_text(result: dict) -> str:
+def load_prev_alerts() -> dict:
+    """讀取上一輪 docs/data.js 的警報狀態，用於去重（只通知新觸發的）"""
+    try:
+        with open("docs/data.js", encoding="utf-8") as f:
+            raw = f.read()
+        prev = json.loads(raw[raw.index("=") + 1:].rstrip().rstrip(";"))
+        return {a["id"]: a["alerts"] for a in flatten_assets(prev)}
+    except Exception:
+        return {}
+
+
+def build_alert_text(result: dict, prev: dict | None = None) -> str:
+    prev = prev or {}
     blocks = []
     for a in flatten_assets(result):
         lines = []
         dates, latest = a["dates"], a["latest"]
-        if a["alerts"].get("attention_spike"):
+        was = prev.get(a["id"], {})
+        if a["alerts"].get("attention_spike") and not was.get("attention_spike"):
             prior = prior_breach_date(dates, a["attn_z"], ATTN_THRESHOLD)
             lines.append(
                 "• 觸發：新聞注意力激增\n"
                 f"  目前注意力指數：{latest['attn_z']}（警戒值 {ATTN_THRESHOLD:.2f}，平時約 0）\n"
                 f"  上次同級激增：{days_ago_str(prior)}"
             )
-        if a["alerts"].get("kl_breach"):
+        if a["alerts"].get("kl_breach") and not was.get("kl_breach"):
             prior = prior_breach_date(dates, a["kl"], a.get("kl_q95") or [])
             lines.append(
                 "• 觸發：散度突破警戒線（媒體敘事異常轉變）\n"
@@ -415,17 +428,21 @@ def send_telegram(text: str) -> bool:
     return bool(resp.get("ok"))
 
 
-def run_alerts(result: dict):
-    text = build_alert_text(result)
+def run_alerts(result: dict, prev: dict | None = None):
+    text = build_alert_text(result, prev)
     if not text:
-        print("無警報觸發，不發送 Telegram")
+        print("無新警報觸發，不發送 Telegram")
         return
     ok = send_telegram(text)
     print("Telegram 警報已發送" if ok else "Telegram 發送失敗")
 
 
 def main():
-    result = {"generated": END.strftime("%Y-%m-%d %H:%M"), "assets": []}
+    result = {
+        "generated": END.strftime("%Y-%m-%d %H:%M"),
+        "generated_utc": pd.Timestamp.now(tz="UTC").isoformat(),
+        "assets": [],
+    }
 
     # --- 黃金 ---
     vol, tone = fetch_pair(XAU)
@@ -475,13 +492,14 @@ def main():
     vol, tone = fetch_pair(BTC)
     result["assets"].append(analyze(BTC, vol, tone))
 
+    prev = load_prev_alerts()  # 覆寫前先記住上一輪狀態，用於警報去重
     os.makedirs("docs", exist_ok=True)
     with open("docs/data.js", "w", encoding="utf-8") as f:
         f.write("window.RADAR_DATA = ")
         json.dump(result, f, ensure_ascii=False)
         f.write(";")
     print("\n已輸出 docs/data.js")
-    run_alerts(result)
+    run_alerts(result, prev)
 
 
 def alert_only():

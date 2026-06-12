@@ -1,0 +1,44 @@
+name: update-data
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # 每 6 小時（UTC 00/06/12/18 = 台灣 08/14/20/02 點）
+  workflow_dispatch:         # 也可在 Actions 頁面手動觸發
+
+permissions:
+  contents: write
+
+concurrency: update-data
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Write alert config from secrets
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TG_TOKEN" ]; then
+            printf '{"telegram_bot_token":"%s","telegram_chat_id":"%s"}' "$TG_TOKEN" "$TG_CHAT" > alert_config.json
+          fi
+
+      - name: Run pipeline
+        run: python radar.py
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.js
+          git diff --cached --quiet || git commit -m "auto: update data $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
