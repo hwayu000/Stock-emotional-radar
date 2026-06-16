@@ -303,6 +303,14 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
                     and last["kl"] > last["kl_q95"])
     alert_attn = bool(pd.notna(df["attn_z"].iloc[-1]) and df["attn_z"].iloc[-1] > 2.0)
 
+    # 個人化基線：過去 90 天的語調分位數，用於警報文字
+    tone90 = df["tone"].tail(90).dropna()
+    tone_baseline = {
+        "median": round(float(tone90.median()), 2),
+        "p10": round(float(tone90.quantile(0.10)), 2),
+        "p90": round(float(tone90.quantile(0.90)), 2),
+    } if len(tone90) >= 30 else None
+
     asset = {
         "id": aid, "name": meta["name"], "note": meta.get("note", ""),
         "dates": [d.strftime("%Y-%m-%d") for d in df.index],
@@ -313,6 +321,7 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
         "te": te_info,
         "articles": articles[:40],
         "corpus_dist": corpus_dist,
+        "tone_baseline": tone_baseline,
         "alerts": {"kl_breach": alert_kl, "attention_spike": alert_attn},
         "latest": {
             "attn_z": None if pd.isna(df["attn_z"].iloc[-1]) else round(float(df["attn_z"].iloc[-1]), 2),
@@ -394,7 +403,18 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
                 f"  上次突破：{days_ago_str(prior)}"
             )
         if lines:
-            lines.append(f"• 媒體語調：{latest['tone']}（正偏多／負偏空）")
+            tone = latest["tone"]
+            bl = a.get("tone_baseline")
+            if bl:
+                if tone > bl["p90"]:
+                    flag = f"📈 比平時樂觀（平時 {bl['p10']:.2f}～{bl['p90']:.2f}，中位 {bl['median']:.2f}）"
+                elif tone < bl["p10"]:
+                    flag = f"📉 比平時悲觀（平時 {bl['p10']:.2f}～{bl['p90']:.2f}，中位 {bl['median']:.2f}）"
+                else:
+                    flag = f"➡️ 與平時相當（平時 {bl['p10']:.2f}～{bl['p90']:.2f}，中位 {bl['median']:.2f}）"
+                lines.append(f"• 媒體語調：{tone} ｜ {flag}")
+            else:
+                lines.append(f"• 媒體語調：{tone}")
             blocks.append(f"【{a['name']}】\n" + "\n".join(lines))
     if not blocks:
         return ""

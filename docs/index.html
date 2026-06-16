@@ -415,6 +415,31 @@ function buildUS(group){
 /* ================= 共用：資訊圖示 / 領先判讀 ================= */
 const INFO_ICO = t => `<span class="info" tabindex="0" data-tip="${t}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg></span>`;
 
+/* 語調的個人化基線——同樣的數字對不同標的意義不同 */
+function toneTooltip(a){
+  const bl = a.tone_baseline;
+  if (!bl) return '媒體報導的平均情緒。每個標的的正常範圍不同，由它自己過去 90 天的數據決定。';
+  return `這個標的過去 90 天的語調通常介於 ${bl.p10} ~ ${bl.p90}（中位 ${bl.median}）。要看的不是正負號，而是和自己的歷史比相對位置。`;
+}
+function toneCompare(a){
+  const t = a.latest.tone, bl = a.tone_baseline;
+  if (t == null) return '';
+  if (!bl) return `（無 90 天基線可比）`;
+  if (t > bl.p90) return `比平時樂觀（平時 ${bl.p10} ~ ${bl.p90}）`;
+  if (t < bl.p10) return `比平時悲觀（平時 ${bl.p10} ~ ${bl.p90}）`;
+  return `與平時相當（平時 ${bl.p10} ~ ${bl.p90}）`;
+}
+function toneColor(a){
+  const t = a.latest.tone, bl = a.tone_baseline;
+  if (t == null) return 'var(--text)';
+  if (bl) {
+    if (t > bl.p90) return 'var(--c-pos)';
+    if (t < bl.p10) return 'var(--c-neg)';
+    return 'var(--text)';
+  }
+  return t > 0 ? 'var(--c-pos)' : 'var(--c-neg)';
+}
+
 function verdictOf(te){
   if (!te) return { txt:'—', sub:'價格數據不足', color:'var(--text-dim)' };
   const nl = te.p_news_to_price < 0.05, pl = te.p_price_to_news < 0.05;
@@ -438,8 +463,9 @@ function buildStats(a){
       <div class="val" style="color:${klAlert?'var(--c-thresh)':'var(--text)'}">${fmt(a.latest.kl,3)}</div>
     </div>
     <div class="stat glass">
-      <div class="lbl">媒體語調 ${INFO_ICO('媒體報導的平均情緒。正值偏多、負值偏空，一般介於 ±10。')}</div>
-      <div class="val" style="color:${a.latest.tone>0?'var(--c-pos)':'var(--c-neg)'}">${fmt(a.latest.tone)}</div>
+      <div class="lbl">媒體語調 ${INFO_ICO(toneTooltip(a))}</div>
+      <div class="val" style="color:${toneColor(a)}">${fmt(a.latest.tone)}</div>
+      <div class="hint">${toneCompare(a)}</div>
     </div>
     <div class="stat glass">
       <div class="lbl">領先方向 ${INFO_ICO('衡量新聞和價格誰先動，詳見下方「誰在領先」卡片。')}</div>
