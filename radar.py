@@ -372,17 +372,6 @@ def days_ago_str(date_str):
     return f"{date_str}（{d} 天前）"
 
 
-def load_prev_alerts() -> dict:
-    """讀取上一輪 docs/data.js 的警報狀態，用於去重（只通知新觸發的）"""
-    try:
-        with open("docs/data.js", encoding="utf-8") as f:
-            raw = f.read()
-        prev = json.loads(raw[raw.index("=") + 1:].rstrip().rstrip(";"))
-        return {a["id"]: a["alerts"] for a in flatten_assets(prev)}
-    except Exception:
-        return {}
-
-
 def build_alert_text(result: dict, prev: dict | None = None) -> str:
     prev = prev or {}
     blocks = []
@@ -437,16 +426,50 @@ def run_alerts(result: dict, prev: dict | None = None):
     print("Telegram 警報已發送" if ok else "Telegram 發送失敗")
 
 
+def load_prev_data() -> dict | None:
+    """讀取上一輪 docs/data.js（用於失敗時保留舊資產）"""
+    try:
+        with open("docs/data.js", encoding="utf-8") as f:
+            raw = f.read()
+        return json.loads(raw[raw.index("=") + 1:].rstrip().rstrip(";"))
+    except Exception:
+        return None
+
+
+def prev_asset(prev: dict | None, aid: str) -> dict | None:
+    if not prev:
+        return None
+    for a in prev.get("assets", []):
+        if a.get("id") == aid:
+            return a
+    return None
+
+
 def main():
+    prev = load_prev_data()
     result = {
         "generated": END.strftime("%Y-%m-%d %H:%M"),
         "generated_utc": pd.Timestamp.now(tz="UTC").isoformat(),
         "assets": [],
     }
+    fresh_count = 0  # 本輪實際刷新的資產數
+
+    def try_simple(meta: dict, aid: str):
+        nonlocal fresh_count
+        try:
+            vol, tone = fetch_pair(meta)
+            result["assets"].append(analyze(meta, vol, tone))
+            fresh_count += 1
+        except Exception as e:
+            print(f"[{aid}] 本輪抓取失敗（{e}），沿用上次數據")
+            old = prev_asset(prev, aid)
+            if old:
+                result["assets"].append(old)
+            else:
+                print(f"[{aid}] 也沒有上次數據可沿用，跳過")
 
     # --- 黃金 ---
-    vol, tone = fetch_pair(XAU)
-    result["assets"].append(analyze(XAU, vol, tone))
+    try_simple(XAU, "XAU")
 
     # --- 美股：掃描候選池 → 近 7 天聲量前三名做完整分析 ---
     print(f"\n[US] 掃描 {len(US_CANDIDATES)} 支候選，按近 7 天新聞聲量排名...")
@@ -461,45 +484,61 @@ def main():
         hot = float(v.tail(7).mean())
         scans.append((hot, c, v))
         print(f"  {c['id']} 近7天平均聲量 = {hot:.4f}")
-    if not scans:
-        raise RuntimeError("美股候選全部抓取失敗，請稍後重跑")
-    scans.sort(key=lambda x: -x[0])
-    max_hot = scans[0][0] or 1.0
 
-    members = []
-    for rank, (hot, c, v) in enumerate(scans[:US_TOP_N], 1):
-        print(f"\n[US] 第 {rank} 名: {c['id']}")
-        print(f"[{c['id']}] 抓取 GDELT 語調...")
-        t = gdelt_timeline(c["query"], "timelinetone", cache_key=c["id"])
-        a = analyze({**c, "note": US_NOTE}, v, t)
-        a["hotness"] = round(hot, 4)
-        a["hotness_pct"] = round(hot / max_hot * 100, 1)
-        a["rank"] = rank
-        members.append(a)
-
-    result["assets"].append({
-        "id": "US", "name": "美股 US", "is_group": True,
-        "members": members,
-        "scanned": [{"id": c["id"], "name": c["name"], "hotness": round(h, 4)}
-                    for h, c, _ in scans],
-        "alerts": {
-            "kl_breach": any(m["alerts"]["kl_breach"] for m in members),
-            "attention_spike": any(m["alerts"]["attention_spike"] for m in members),
-        },
-    })
+    if scans:
+        scans.sort(key=lambda x: -x[0])
+        max_hot = scans[0][0] or 1.0
+        members = []
+        for rank, (hot, c, v) in enumerate(scans[:US_TOP_N], 1):
+            print(f"\n[US] 第 {rank} 名: {c['id']}")
+            try:
+                print(f"[{c['id']}] 抓取 GDELT 語調...")
+                t = gdelt_timeline(c["query"], "timelinetone", cache_key=c["id"])
+                a = analyze({**c, "note": US_NOTE}, v, t)
+                a["hotness"] = round(hot, 4)
+                a["hotness_pct"] = round(hot / max_hot * 100, 1)
+                a["rank"] = rank
+                members.append(a)
+            except Exception as e:
+                print(f"  {c['id']} 完整分析失敗（{e}），跳過")
+        if members:
+            result["assets"].append({
+                "id": "US", "name": "美股 US", "is_group": True,
+                "members": members,
+                "scanned": [{"id": c["id"], "name": c["name"], "hotness": round(h, 4)}
+                            for h, c, _ in scans],
+                "alerts": {
+                    "kl_breach": any(m["alerts"]["kl_breach"] for m in members),
+                    "attention_spike": any(m["alerts"]["attention_spike"] for m in members),
+                },
+            })
+            fresh_count += 1
+        else:
+            print("[US] 本輪美股全部失敗，沿用上次數據")
+            old = prev_asset(prev, "US")
+            if old:
+                result["assets"].append(old)
+    else:
+        print("[US] 候選掃描全部失敗，沿用上次數據")
+        old = prev_asset(prev, "US")
+        if old:
+            result["assets"].append(old)
 
     # --- 比特幣 ---
-    vol, tone = fetch_pair(BTC)
-    result["assets"].append(analyze(BTC, vol, tone))
+    try_simple(BTC, "BTC")
 
-    prev = load_prev_alerts()  # 覆寫前先記住上一輪狀態，用於警報去重
+    if fresh_count == 0:
+        raise RuntimeError("本輪所有資產皆失敗，不覆寫 docs/data.js（保留上次正常數據）")
+
+    # 用上一輪的警報狀態做去重（用於 Telegram）
+    prev_alerts = {a["id"]: a["alerts"] for a in flatten_assets(prev)} if prev else {}
     os.makedirs("docs", exist_ok=True)
     with open("docs/data.js", "w", encoding="utf-8") as f:
         f.write("window.RADAR_DATA = ")
         json.dump(result, f, ensure_ascii=False)
         f.write(";")
-    print("\n已輸出 docs/data.js")
-    run_alerts(result, prev)
+    print(f"\n已輸出 docs/data.js（本輪實際刷新 {fresh_count} 個資產組）")
+    run_alerts(result, prev_alerts)
 
 
 def alert_only():
