@@ -210,8 +210,9 @@
   }
   .art:hover { border-color:var(--accent); }
   .art:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  .art .t { font-size:.9rem; line-height:1.5; flex:1; }
-  .art .d { font-family:var(--font-mono); font-size:.68rem; color:var(--text-faint); white-space:nowrap; text-align:right; }
+  .art .t { font-size:.9rem; line-height:1.5; flex:1; min-width:0; overflow-wrap:anywhere; }
+  .art .d { font-family:var(--font-mono); font-size:.68rem; color:var(--text-faint); white-space:nowrap; text-align:right; flex-shrink:0; }
+  @media (max-width:400px){ .art{gap:.5rem; padding:.65rem .7rem;} .art .d{font-size:.62rem;} .art .t{font-size:.84rem;} }
   .chip { flex-shrink:0; font-family:var(--font-mono); font-size:.64rem; font-weight:700; padding:.25rem .55rem; border-radius:6px; letter-spacing:.04em; text-transform:uppercase; }
   .chip.pos { background:var(--chip-pos-bg); color:var(--c-pos); }
   .chip.neg { background:var(--chip-neg-bg); color:var(--c-neg); }
