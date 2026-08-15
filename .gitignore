@@ -24,3 +24,7 @@ _state/
 # OS
 Thumbs.db
 .DS_Store
+
+# 長期回測用的價格快取（可由腳本重新抓取）
+validation/gold_daily.json
+validation/cache_history/

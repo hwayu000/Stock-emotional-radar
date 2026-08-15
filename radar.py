@@ -383,6 +383,27 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
             }
         df = df.join(close.rename("close"))
 
+    # 當日波動情境：決定注意力訊號可信度的關鍵條件
+    # 長期回測（validation/v7、v8）結論 —— 控制當日波動後做層內比較：
+    #   當日波動低  → 1D 0.99x／3D 0.88x／5D 0.57x  無效甚至反向（多為雜訊）
+    #   當日波動中  → 1D 1.69x／3D 1.58x／5D 1.74x  有獨立增量價值 ★
+    #   當日波動高  → 1D 1.80x／3D 1.40x／5D 1.01x  短期有效，5D 衰減
+    # 因為市場本身有波動聚集現象（黃金 22.6 年實測：昨日波動前 5% 即可得 1D
+    # 4.04x，遠勝注意力的 1.79x），且激增日當天波動本就是平時的 2.11 倍，
+    # 混淆確實存在。控制後才知道訊號真正的適用區間。
+    vol_regime = None
+    if "close" in df and df["close"].notna().sum() > 60:
+        dret = df["close"].pct_change().abs() * 100
+        cur = dret.dropna()
+        if len(cur) > 30:
+            today_move = float(cur.iloc[-1])
+            lo, hi = float(cur.quantile(0.50)), float(cur.quantile(0.90))
+            vol_regime = {
+                "today_move": round(today_move, 3),
+                "level": "低" if today_move < lo else ("中" if today_move < hi else "高"),
+                "p50": round(lo, 3), "p90": round(hi, 3),
+            }
+
     last = df.dropna(subset=["kl"]).iloc[-1] if df["kl"].notna().any() else df.iloc[-1]
 
     # === 警報只採用「已定版」資料 ===
@@ -446,6 +467,7 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
         "corpus_dist": corpus_dist,
         "tone_baseline": tone_baseline,
         "quality": quality,
+        "vol_regime": vol_regime,
         # kl_breach 保留欄位供 UI 標示，但已不觸發 Telegram 警報（無統計顯著性）
         "alerts": {"kl_breach": False, "kl_observed": kl_breach_raw,
                    "attention_spike": alert_attn},
@@ -533,6 +555,16 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
             exp = {"極高": "1D 1.7x／3D 1.6x／5D 1.5x",
                    "高": "1D 1.8x／3D 1.5x／5D 1.3x",
                    "中": "1D 1.5x（3D 以後不顯著）"}[lvl]
+            # 當日波動情境決定這則訊號可不可信（見 analyze() 內 vol_regime 註解）
+            vr = a.get("vol_regime") or {}
+            conf = {
+                "低": "⚠️ 可信度低 —— 市場平靜時的注意力激增多為雜訊"
+                      "（層內實測 1D 0.99x／5D 0.57x，等於無效）",
+                "中": "✅ 可信度高 —— 這是本指標最有效的區間"
+                      "（層內實測 1D 1.69x／3D 1.58x／5D 1.74x）",
+                "高": "◐ 短期可信 —— 但市場已在劇烈波動，價格訊號本身就夠強"
+                      "（層內 1D 1.80x，5D 衰減至 1.01x）",
+            }.get(vr.get("level"), "")
             lines.append(
                 f"• 觸發：新聞注意力激增（強度：{lvl}）\n"
                 f"  注意力指數：{z}（警戒值 {ATTN_THRESHOLD:.2f}，平時約 0）\n"
@@ -540,6 +572,8 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
                 f"  上次同級激增：{days_ago_str(prior)}\n"
                 f"  歷史行為：不預測漲跌方向，但波動放大 {exp}\n"
                 f"  建議回檢：D+1 / D+3 / D+5（D+8 後已回歸常態）"
+                + (f"\n  當日波動：{vr.get('today_move')}%（{vr.get('level')}檔）\n"
+                   f"  {conf}" if conf else "")
             )
         if lines:
             tone = latest["tone"]
