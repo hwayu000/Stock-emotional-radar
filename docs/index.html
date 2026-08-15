@@ -288,6 +288,31 @@
   .info:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:50%; }
   .info svg { width:100%; height:100%; }
 
+  /* ================= 自訂日期區間面板 ================= */
+  .rangepicker {
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:80; width:min(22rem, calc(100vw - 2rem)); padding:1.35rem 1.45rem; display:none;
+    box-shadow:0 18px 50px rgba(0,0,0,.28);
+  }
+  .rangepicker.open { display:block; animation:fadeIn .2s var(--ease) both; }
+  .rangepicker h4 { font-family:var(--font-mono); font-size:.72rem; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--text-dim); margin:0 0 .9rem; }
+  .rp-row { display:flex; align-items:center; gap:.8rem; margin-bottom:.7rem; }
+  .rp-row label { font-family:var(--font-mono); font-size:.78rem; color:var(--text-dim); width:1.6rem; }
+  .rp-row input[type="date"] {
+    flex:1; font-family:var(--font-mono); font-size:.86rem; padding:.5rem .6rem;
+    border:1px solid var(--line); border-radius:9px; background:var(--bg); color:var(--text);
+    color-scheme:light dark;   /* 讓原生日曆圖示在深色模式下也看得見 */
+  }
+  .rp-hint { font-family:var(--font-mono); font-size:.68rem; color:var(--text-dim); margin:.2rem 0 1rem; }
+  .rp-btns { display:flex; gap:.6rem; justify-content:flex-end; }
+  .rp-btns button {
+    font-family:var(--font-mono); font-size:.8rem; padding:.5rem 1rem; border-radius:999px;
+    border:1px solid var(--line); background:transparent; color:var(--text); cursor:pointer;
+  }
+  .rp-btns button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .rp-btns button:hover { border-color:var(--accent); }
+
   /* ================= 設定面板 ================= */
   .panel {
     position:fixed; top:5rem; right:1.4rem; z-index:60; width:16rem; padding:1.25rem 1.35rem;
@@ -470,6 +495,18 @@
   </div>
 </div>
 
+<!-- 自訂日期區間面板 -->
+<div class="rangepicker card pad" id="rangePicker" role="dialog" aria-label="自訂日期區間">
+  <h4>自訂區間</h4>
+  <div class="rp-row"><label for="rpFrom">起</label><input type="date" id="rpFrom"></div>
+  <div class="rp-row"><label for="rpTo">迄</label><input type="date" id="rpTo"></div>
+  <div class="rp-hint" id="rpHint"></div>
+  <div class="rp-btns">
+    <button type="button" id="rpCancel">取消</button>
+    <button type="button" id="rpApply" class="primary">套用</button>
+  </div>
+</div>
+
 <div class="tip" id="tip"></div>
 
 <script src="data.js"></script>
@@ -502,17 +539,42 @@ function applyPrefs(){
 
 /* ================= 狀態 ================= */
 let cur = 0, usMember = 0;
-const RANGES = [['7D',7],['30D',30],['90D',90],['ALL',0]];
+/* 範圍選項。資料期間隨 GDELT 歷史累積會變長（最長可回溯 2017），
+   故長期選項只在資料真的夠長時才顯示，避免給出空按鈕。 */
+const ALL_RANGES = [['7D',7],['30D',30],['90D',90],['1Y',365],['3Y',1095],['5Y',1825],['ALL',0]];
+function availRanges(){
+  const n = Math.max(...D.assets.map(a => a.is_group
+    ? Math.max(...a.members.map(m => m.dates.length)) : a.dates.length));
+  // 只保留「資料量撐得起」的檔位：需比該檔位多 20% 才有意義，ALL 永遠保留
+  return ALL_RANGES.filter(r => r[1] === 0 || n >= r[1] * 1.2 || r[1] <= 90);
+}
+const RANGES = availRanges();
 // 綜合疊圖：哪些線開著
 let overlayOn = { price:true, kl:true, attn:true };
 
 function activeAsset(){ const a = D.assets[cur]; return a.is_group ? a.members[usMember] : a; }
+
+/* 依 prefs 切出要顯示的區間。支援兩種模式：
+   - 檔位模式（7D/30D/…/ALL）：取最後 N 天
+   - 自訂模式（prefs.customFrom/customTo）：取日期區間，供回看特定歷史事件 */
 function sliced(a){
-  const days = RANGES.find(r=>r[0]===prefs.range)[1];
+  if (prefs.range === 'CUSTOM' && prefs.customFrom && prefs.customTo){
+    const i0 = a.dates.findIndex(d => d >= prefs.customFrom);
+    let i1 = -1;
+    for (let k = a.dates.length - 1; k >= 0; k--){ if (a.dates[k] <= prefs.customTo){ i1 = k; break; } }
+    if (i0 < 0 || i1 < 0 || i1 < i0) return a;      // 區間無資料 -> 退回全部
+    const cut = arr => Array.isArray(arr) ? arr.slice(i0, i1 + 1) : arr;
+    return { ...a, dates:cut(a.dates), vol:cut(a.vol), tone:cut(a.tone),
+             attn_z:cut(a.attn_z), kl:cut(a.kl), kl_q95:cut(a.kl_q95),
+             kl_dir:cut(a.kl_dir), close:cut(a.close), provisional:cut(a.provisional) };
+  }
+  const hit = RANGES.find(r => r[0] === prefs.range);
+  const days = hit ? hit[1] : 0;
   if (!days || a.dates.length <= days) return a;
   const cut = arr => Array.isArray(arr) ? arr.slice(-days) : arr;
   return { ...a, dates:cut(a.dates), vol:cut(a.vol), tone:cut(a.tone),
-           attn_z:cut(a.attn_z), kl:cut(a.kl), kl_q95:cut(a.kl_q95), close:cut(a.close) };
+           attn_z:cut(a.attn_z), kl:cut(a.kl), kl_q95:cut(a.kl_q95),
+           kl_dir:cut(a.kl_dir), close:cut(a.close), provisional:cut(a.provisional) };
 }
 function palette(){
   const cs = getComputedStyle(document.documentElement);
@@ -549,9 +611,51 @@ function buildTabs(){
       return { html:`<span class="dot${alert?' alert':''}"></span>${a.name}` };
     }),
     cur, i => { cur = i; usMember = 0; if(prefs.tab===4 && !D.assets[i].is_group) setTab(0); render(); });
-  segBuild($('rangeSeg'), RANGES.map(r=>({label:r[0]})),
-    RANGES.findIndex(r=>r[0]===prefs.range),
-    i => { prefs.range = RANGES[i][0]; savePrefs(); render(); });
+  // 最後一顆是自訂區間，開啟日期挑選面板
+  const items = RANGES.map(r=>({label:r[0]})).concat([{label:'自訂'}]);
+  const activeIdx = prefs.range === 'CUSTOM'
+    ? items.length - 1 : RANGES.findIndex(r=>r[0]===prefs.range);
+  segBuild($('rangeSeg'), items, activeIdx, i => {
+    if (i === items.length - 1){ openRangePicker(); return; }
+    prefs.range = RANGES[i][0]; savePrefs(); render();
+  });
+}
+
+/* ================= 自訂日期區間 ================= */
+function dataBounds(){
+  let lo = null, hi = null;
+  const scan = a => { if(!a.dates || !a.dates.length) return;
+    if (lo === null || a.dates[0] < lo) lo = a.dates[0];
+    if (hi === null || a.dates[a.dates.length-1] > hi) hi = a.dates[a.dates.length-1]; };
+  D.assets.forEach(a => a.is_group ? a.members.forEach(scan) : scan(a));
+  return [lo, hi];
+}
+function openRangePicker(){
+  const [lo, hi] = dataBounds();
+  const f = prefs.customFrom || lo, t = prefs.customTo || hi;
+  $('rpFrom').min = lo; $('rpFrom').max = hi; $('rpFrom').value = f;
+  $('rpTo').min = lo;   $('rpTo').max = hi;   $('rpTo').value = t;
+  $('rpHint').textContent = `可選範圍 ${lo} ~ ${hi}`;
+  $('rangePicker').classList.add('open');
+}
+function applyRangePicker(){
+  const f = $('rpFrom').value, t = $('rpTo').value;
+  if (!f || !t){ return; }
+  prefs.customFrom = f <= t ? f : t;
+  prefs.customTo   = f <= t ? t : f;
+  prefs.range = 'CUSTOM';
+  savePrefs();
+  $('rangePicker').classList.remove('open');
+  render();
+}
+/* 快捷：跳到某個歷史事件前後。用於回看「當時新聞在說什麼」 */
+function jumpTo(centerDate, padDays){
+  const c = new Date(centerDate + 'T00:00:00Z');
+  const d1 = new Date(c); d1.setUTCDate(d1.getUTCDate() - padDays);
+  const d2 = new Date(c); d2.setUTCDate(d2.getUTCDate() + padDays);
+  const iso = x => x.toISOString().slice(0,10);
+  prefs.customFrom = iso(d1); prefs.customTo = iso(d2); prefs.range = 'CUSTOM';
+  savePrefs(); render();
 }
 
 /* ================= Tab 導覽 ================= */
@@ -630,6 +734,22 @@ function klDirTag(dir){
     敘事${up?'轉樂觀':'轉悲觀'} ${dir>0?'+':''}${(+dir).toFixed(2)}</div>`;
 }
 
+/* 當日波動情境 —— 決定注意力訊號可不可信。
+   長期回測（黃金 22.6 年基準 + 層內比較）顯示訊號效力高度依賴當日波動水準：
+   市場平靜時的激增多為雜訊，已劇烈波動時價格訊號本身就夠強，
+   真正有增量價值的是中間地帶。詳見「資料可信度」分頁。 */
+function regimeTag(vr, isAlert){
+  if (!vr || !vr.level) return '';
+  const map = {
+    '低': ['var(--text-dim)', '此區間訊號多為雜訊'],
+    '中': ['var(--c-pos)',    '訊號最有效的區間'],
+    '高': ['var(--accent)',   '價格已自帶訊號'],
+  };
+  const [col, txt] = map[vr.level] || ['var(--text-dim)', ''];
+  return `<div style="font-size:.62rem;margin-top:.3rem;font-family:var(--font-mono);color:${col}">
+    當日波動 ${vr.today_move}%（${vr.level}檔）${isAlert ? ' · ' + txt : ''}</div>`;
+}
+
 /* ================= 統計卡 ================= */
 function buildStats(a){
   const attnAlert = a.alerts.attention_spike, klAlert = a.alerts.kl_observed;
@@ -646,6 +766,7 @@ function buildStats(a){
       <div class="lbl">注意力指數 ${INFO_ICO('新聞量偏離自身常態的標準差倍數。警戒值 2.5（由事件研究校準：z>2.0 在 3D/5D 無統計顯著性，z>2.5 才穩定顯著）。實證：預測「波動放大」而非漲跌方向。')} <span class="badge ${attnAlert?'warn':'ok'}">${attnAlert?(lvl||'激增'):'正常'}</span>${provTag}</div>
       <div class="val" style="color:${attnAlert?'var(--accent)':'var(--text)'}">${fmt(zShow)}</div>
       ${prov?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.3rem;font-family:var(--font-mono)">警報依據定版值 · 今日即時 ${fmt(L.attn_z)}</div>`:''}
+      ${regimeTag(a.vol_regime, attnAlert)}
     </div>
     <div class="card stat">
       <div class="lbl">散度 ${INFO_ICO('近一週語調分佈 vs 前三個月的 KL 散度，衡量「敘事結構改變了多少」。散度本身不含方向，故另標示語調是轉樂觀還是轉悲觀。檢定結果：散度突破後的波動放大無統計顯著性（p 0.21~0.50），已降級為觀察指標不發警報；有向版本僅 5D 單點 p=0.048、樣本 8~10 次，不足以認定為可用訊號。')} <span class="badge" style="border-color:var(--text-dim);color:var(--text-dim)">觀察</span></div>
@@ -680,9 +801,14 @@ function chart(canvas, dates, series, opts){
   const padL=opts.padL!=null?opts.padL:48, padR=opts.padR!=null?opts.padR:12, padT=14, padB=24;
   const pw = w-padL-padR, ph = h-padT-padB;
 
-  const all = series.flatMap(s=>s.data).filter(v=>v!=null && isFinite(v));
-  if(!all.length){ ctx.fillStyle=P.label; ctx.font='13px monospace'; ctx.fillText('無數據', w/2-24, h/2); return; }
-  let lo=Math.min(...all), hi=Math.max(...all);
+  // 用迴圈求極值，不用 Math.min(...arr)：展開運算子在資料量大時會爆呼叫堆疊，
+  // 資料擴充到 9.6 年後單圖可達數千點、疊圖更多，必須避開這個上限。
+  let lo = Infinity, hi = -Infinity, cnt = 0;
+  for (const s of series) for (const v of s.data){
+    if (v == null || !isFinite(v)) continue;
+    if (v < lo) lo = v; if (v > hi) hi = v; cnt++;
+  }
+  if(!cnt){ ctx.fillStyle=P.label; ctx.font='13px monospace'; ctx.fillText('無數據', w/2-24, h/2); return; }
   if(lo===hi){ lo-=1; hi+=1; }
   const m=(hi-lo)*0.08; lo-=m; hi+=m;
   const X = i => padL + pw*i/Math.max(dates.length-1,1);
@@ -752,8 +878,12 @@ function chartOverlay(canvas, dates, left, rights){
   const X = i => padL + pw*i/Math.max(dates.length-1,1);
 
   // 左軸範圍（價格）
-  function range(arr){ const a=arr.filter(v=>v!=null&&isFinite(v)); if(!a.length)return null;
-    let lo=Math.min(...a),hi=Math.max(...a); if(lo===hi){lo-=1;hi+=1;} const m=(hi-lo)*.08; return [lo-m,hi+m]; }
+  // 迴圈求極值（同上，避開展開運算子的堆疊上限）
+  function range(arr){
+    let lo=Infinity, hi=-Infinity, n=0;
+    for(const v of arr){ if(v==null||!isFinite(v))continue; if(v<lo)lo=v; if(v>hi)hi=v; n++; }
+    if(!n) return null;
+    if(lo===hi){lo-=1;hi+=1;} const m=(hi-lo)*.08; return [lo-m,hi+m]; }
   const lRange = overlayOn.price && left.data.some(v=>v!=null) ? range(left.data) : null;
   // 右軸範圍：把所有開著的右軸序列合併取範圍
   const rActive = rights.filter(r=>overlayOn[r.key]);
@@ -982,6 +1112,11 @@ function buildPanel(){
     i=>{ prefs.contrast=CT_OPTS[i][0]; savePrefs(); applyPrefs(); buildPanel(); render(); });
 }
 $('fontBtn').onclick = () => $('panel').classList.toggle('open');
+$('rpApply').onclick  = applyRangePicker;
+$('rpCancel').onclick = () => $('rangePicker').classList.remove('open');
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') $('rangePicker').classList.remove('open');
+});
 $('themeBtn').onclick = () => { prefs.theme = prefs.theme==='dark'?'light':'dark'; savePrefs(); applyPrefs(); render(); };
 document.addEventListener('click', e => {
   const p=$('panel');
