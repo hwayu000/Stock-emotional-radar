@@ -28,3 +28,8 @@ Thumbs.db
 # 長期回測用的價格快取（可由腳本重新抓取）
 validation/gold_daily.json
 validation/cache_history/
+
+# 歷史抓取的執行期檔案
+validation/fetch.pid
+validation/fetch_history.log
+validation/fetch_history.err
