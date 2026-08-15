@@ -35,17 +35,21 @@ CACHE = os.path.join(HERE, 'cache_history')
 
 UA = {"User-Agent": "Mozilla/5.0 (attention-radar research script)"}
 PAUSE = 22          # 請求間隔秒數
-START_YEAR = 2017   # 實測的 GDELT 資料起點
+# GDELT 資料實測可回溯到 2017 初（2016 以前回 "Invalid query start date"），
+# 但起始年設為 2018：太早的資料市場結構已不同，參考價值有限，
+# 且能省下約 15% 抓取時間。2018 起約 8.6 年、樣本仍是原本一年的 8.6 倍。
+START_YEAR = 2018
 END_YEAR = 2026
 
+# 只抓實際會進入回測的資產。美股候選池有 5 支，但雷達每輪只取聲量前三做
+# 完整分析；歷史回測取近期常駐的 NVDA/AAPL/MSFT 即可，TSLA/AMZN 進榜頻率低，
+# 納入只會拉長抓取時間而增加不了多少有效事件數。
 ASSETS = {
     "XAU":  '("gold price" OR "gold prices" OR "spot gold")',
+    "BTC":  'bitcoin',
     "NVDA": 'nvidia stock',
-    "TSLA": 'tesla stock',
     "AAPL": 'apple stock',
     "MSFT": 'microsoft stock',
-    "AMZN": 'amazon stock',
-    "BTC":  'bitcoin',
 }
 MODES = ("timelinevol", "timelinetone")
 
