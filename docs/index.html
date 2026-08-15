@@ -288,6 +288,31 @@
   .info:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:50%; }
   .info svg { width:100%; height:100%; }
 
+  /* ============ 資料可信度：白話層 + 可展開的嚴謹層 ============ */
+  .plain-h { font-size:1.05rem; font-weight:700; margin:0 0 1rem; letter-spacing:.01em; }
+  .plain-block { padding:.9rem 0; border-bottom:1px solid var(--line); }
+  .plain-block:last-child { border-bottom:none; }
+  .plain-q { font-family:var(--font-mono); font-size:.76rem; letter-spacing:.05em;
+    color:var(--accent); margin-bottom:.55rem; }
+  .plain p { font-size:.9rem; line-height:1.85; margin:.35rem 0; color:var(--text); }
+  .plain-key { padding:.6rem .8rem; background:var(--accent-soft); border-radius:8px;
+    color:var(--text) !important; margin-top:.6rem !important; }
+  html[data-theme="dark"] .plain-key { background:rgba(255,106,26,.11); }
+  .plain-list { list-style:none; padding:0; margin:.5rem 0; }
+  .plain-list li { font-size:.88rem; line-height:1.9; margin-bottom:.35rem; color:var(--text); }
+  .plain-list .tag { display:inline-block; font-family:var(--font-mono); font-size:.68rem;
+    padding:.12rem .5rem; border-radius:999px; border:1px solid currentColor; margin-right:.45rem; }
+  .plain-list .tag.dim { color:var(--text-dim); }
+  .plain-list .tag.pos { color:var(--c-pos); }
+  .plain-list .tag.acc { color:var(--accent); }
+  .rigor { margin-top:1.4rem; border-top:1px solid var(--line); padding-top:1rem; }
+  .rigor > summary { cursor:pointer; font-family:var(--font-mono); font-size:.76rem;
+    letter-spacing:.05em; color:var(--text-dim); padding:.4rem 0; list-style:none; }
+  .rigor > summary::-webkit-details-marker { display:none; }
+  .rigor > summary::before { content:'▸ '; color:var(--accent); }
+  .rigor[open] > summary::before { content:'▾ '; }
+  .rigor > summary:hover { color:var(--accent); }
+
   /* ================= 自訂日期區間面板 ================= */
   .rangepicker {
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -324,7 +349,8 @@
   .panel .seg { width:100%; }
   .panel .seg button { flex:1; justify-content:center; padding:.55rem .3rem; font-size:.82rem; }
 
-  .foot { margin-top:2rem; font-family:var(--font-mono); font-size:.72rem; color:var(--text-faint); line-height:1.8; text-align:center; }
+  /* 用 text-dim 而非 text-faint：faint 在此字級下對比僅 2.54:1，未達 WCAG AA 4.5:1 */
+  .foot { margin-top:2rem; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); line-height:1.8; text-align:center; }
   .foot a { color:var(--accent); text-decoration:none; }
 
   @media (max-width:640px){
@@ -472,7 +498,7 @@
   <div class="tabpage" id="pgTrust">
     <div class="card chart-card hoverable">
       <div class="chart-head">
-        <h3>資料來源與可信度
+        <h3>這個指標對 K 線有什麼影響？
           <span class="info" tabindex="0" data-tip="每個數字的出處、更新頻率、已知限制與完整度。所有統計結論都附可獨立複驗的方法，程式碼在 validation/ 目錄。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg></span>
         </h3>
       </div>
@@ -1185,9 +1211,68 @@ function buildTrust(a){
   const closeN = cnt('close'), volN = cnt('vol');
   // 價格缺漏率：股票/期貨約 31% 為週末假日（正常），BTC 7×24 應接近 0
   const closeRate = n ? (closeN/n*100) : 0;
+  // 當前波動檔位：白話層要據此告訴使用者「現在這個訊號能不能信」
+  const vr = a.vol_regime || {};
+  const lvNow = vr.level;
+  const nowLine = lvNow ? ({
+    '低': ['var(--text-dim)', `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>低檔</b> —— 這種時候的新聞爆量多半是假警報，不用太在意。`],
+    '中': ['var(--c-pos)',    `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>中檔</b> —— 這正是本指標最準的區間，若出現激增值得留意。`],
+    '高': ['var(--accent)',   `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>高檔</b> —— K 線自己已經在跳了，新聞的額外資訊有限。`],
+  }[lvNow] || []) : [];
+
   box.innerHTML = `
-    <div style="font-size:.82rem;color:var(--text-dim);line-height:1.75;margin-bottom:1rem">
-      本頁列出每個數字的出處、更新頻率與已知限制。所有統計結論皆可用
+    <!-- ── 白話層：先講對 K 線的直接影響 ── -->
+    <div class="plain">
+      <div class="plain-block">
+        <div class="plain-q">注意力指數飆高時，K 線會怎樣？</div>
+        <p><b style="color:var(--c-neg)">不會告訴你漲還是跌。</b>
+           這點測過 15 次全部失敗 —— 新聞熱度預測不了方向。</p>
+        <p><b style="color:var(--accent)">會告訴你「要開始震了」。</b>
+           平常一天上下動約 1.06%，注意力飆高後隔天平均動 1.90%，接近兩倍；
+           3 天內動 3.15%、5 天內 3.74%。</p>
+        <p class="plain-key">講白話：K 線的實體和影線會變長，但往上往下不知道。<br>
+           所以它的用途是 —— <b>該調倉位、該拉停損，不是該追多或追空。</b></p>
+      </div>
+
+      <div class="plain-block">
+        <div class="plain-q">什麼時候該信、什麼時候別理它？</div>
+        <p>關鍵要看<b>當天 K 線本來的樣子</b>：</p>
+        <ul class="plain-list">
+          <li><span class="tag dim">K 線很小</span> 波動 &lt;0.62% →
+              <b>這訊號沒用</b>，實測 5 天後反而比平常還平靜（0.57 倍）</li>
+          <li><span class="tag pos">K 線中等</span> 波動 0.62~2.84% →
+              <b>這時最準</b>，後續 3~5 天波動放大約 1.6~1.7 倍</li>
+          <li><span class="tag acc">K 線已經很大</span> 波動 &gt;2.84% →
+              隔天還有效，但 5 天後就沒差了（1.01 倍）</li>
+        </ul>
+        <p class="plain-key">一句話：K 線平靜時的新聞爆量是假警報；K 線已經在跳時你自己看得出來；
+           <b>真正有價值的是 K 線還沒明顯異常、但新聞已經在燒的時候。</b></p>
+        ${nowLine.length ? `<p style="color:${nowLine[0]};margin-top:.7rem">▸ ${nowLine[1]}</p>` : ''}
+      </div>
+
+      <div class="plain-block">
+        <div class="plain-q">訊號能撐多久？</div>
+        <p>激增當天最強，之後遞減：<b>D+1</b> 還有 1.38 倍、<b>D+3</b> 剩 1.19 倍、
+           <b>D+4</b> 起回到常態，<b>D+8</b> 之後完全沒差。</p>
+        <p class="plain-key">要回頭檢查的話，看 <b>D+1 / D+3 / D+5</b> 就夠，超過一週不用再追。</p>
+      </div>
+
+      <div class="plain-block">
+        <div class="plain-q">散度那條線呢？</div>
+        <p><b style="color:var(--text-dim)">目前判定：不能當訊號用。</b>
+           測下來散度突破後 K 線並沒有比較會動（0.98~1.23 倍，統計上跟隨機沒兩樣）。
+           已經停掉它的警報，只留在圖表上給你觀察媒體風向。</p>
+        <p>另外發現散度有個先天缺陷：它只算「敘事變了多少」，不分「變樂觀還變悲觀」，
+           而這兩種情況對價格的意義是相反的，混在一起就互相抵消。
+           所以我另外加了方向標示（散度卡下方那行）。
+           <b>方向本身目前樣本只有 8~10 次，還不敢下結論</b>，正在擴充到 8.6 年重驗。</p>
+      </div>
+    </div>
+
+    <details class="rigor">
+      <summary>看嚴謹證據 —— 資料來源、樣本數、統計檢定</summary>
+    <div style="font-size:.82rem;color:var(--text-dim);line-height:1.75;margin:1rem 0">
+      以下列出每個數字的出處、更新頻率與已知限制。所有統計結論皆可用
       <code style="font-family:var(--font-mono);font-size:.78rem">validation/</code> 目錄的腳本獨立複驗。
     </div>
     <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:.4rem 0 .3rem">資料來源</h4>
@@ -1219,11 +1304,22 @@ function buildTrust(a){
           '衰減曲線：D+0 1.75x → D+1 1.38x → D+2 1.20x → D+3 1.19x → D+4 起回落，D+8 之後與常態無異。故建議回檢時點為 D+1／D+3／D+5。')}
     ${row('何時該信這訊號', '<b style="color:var(--accent)">當日波動中等時最有效</b>',
           '用黃金 22.6 年日線（5683 筆）建立基準後發現：光看「昨日波動前 5%」就能得到 1D 4.04x，遠勝注意力的 1.79x——市場本來就有波動聚集現象。且激增日當天平均波動 2.24% vs 平時 1.06%（2.11x），混淆確實存在。<b>控制當日波動後做層內比較</b>：當日波動低(<0.62%)時 0.99x／0.88x／0.57x <b>無效甚至反向</b>；<b>中等(0.62~2.84%)時 1.69x／1.58x／1.74x，有獨立增量價值</b>；高(>2.84%)時 1.80x／1.40x／1.01x，短期有效但 5D 衰減。結論：市場平靜時的注意力激增多半是雜訊，市場已劇烈波動時價格訊號本身就夠強，<b>此指標的價值在中間地帶——價格還看不出異常、但新聞已經在動</b>。')}
+    <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:1.1rem 0 .3rem">結論分級標準</h4>
+    <div style="font-size:.78rem;line-height:1.8;color:var(--text-dim);padding:.2rem 0">
+      措辭嚴格對應證據強度，同一個數字在樣本 10 次與 170 次下能說的話並不相同：<br>
+      <span style="color:var(--c-pos)">■ 已驗證</span>　多期間一致顯著 ＋ FDR 校正後存活 ＋ 樣本外重現　→ 白話層寫「這個可以信」<br>
+      <span style="color:var(--c-pos);opacity:.6">■ 有證據</span>　多期間顯著但尚未做樣本外驗證　→ 白話層寫「歷史上是這樣，但還沒用新資料驗過」<br>
+      <span style="color:var(--text-dim)">■ 線索</span>　僅單期間顯著，或效果隨樣本增加而衰減　→ 白話層寫「可能是碰巧」<br>
+      <span style="color:var(--text-dim)">■ 已否定</span>　擴充樣本後不再顯著　→ 白話層直接寫「本來以為有用，資料變多後發現是錯覺」<br>
+      <span style="color:var(--accent)">第四級會確實使用。</span>若散度方向擴充後失效，就寫「已否定」，不改口為「趨勢仍值得參考」。
+    </div>
     <div style="margin-top:1.1rem;padding:.75rem .9rem;border:1px solid var(--accent);border-left-width:3px;border-radius:10px;font-size:.8rem;line-height:1.7;color:var(--text);background:transparent">
       <b style="color:var(--accent)">已知限制</b>：GDELT 只涵蓋公開網路新聞，不含社群媒體與私有終端；語調為英文語料模型，中文報導未納入。
-      樣本僅一年（約 360 天），事件數 30~60 次，屬小樣本統計，結論會隨資料累積而修正。
+      目前樣本僅一年（約 360 天），事件數 30~60 次，屬小樣本統計。
+      <b>正在擴充至 2018 起約 8.6 年</b>（事件數預計增至 300~500），屆時全部結論會重新檢定並更新分級。
       本頁所有數字為研究參考，非投資建議。
-    </div>`;
+    </div>
+    </details>`;
 }
 
 /* ================= 資訊 tooltip ================= */
