@@ -153,8 +153,10 @@
 
   /* ================= 統計卡 ================= */
   .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(13.5rem,1fr)); gap:1rem; margin-bottom:1.2rem; }
-  .stat { padding:1.2rem 1.35rem; overflow:hidden; }
+  .stat { padding:1.2rem 1.35rem; overflow:hidden; display:flex; flex-direction:column; }
+  /* 標籤區可換行（未定版徽章會擠成第二行），數值一律貼齊卡片底部，四張卡看齊 */
   .stat .lbl { font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); letter-spacing:.07em; text-transform:uppercase; margin-bottom:.7rem; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  .stat .val { margin-top:auto; }
   .stat .val { font-family:var(--font-mono); font-size:2.2rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em; line-height:1; }
   .stat .hint { font-family:var(--font-mono); font-size:.74rem; color:var(--text-faint); margin-top:.55rem; line-height:1.6; letter-spacing:.02em; }
   .badge { font-family:var(--font-mono); font-size:.64rem; font-weight:700; padding:.24rem .55rem; border-radius:999px; letter-spacing:.06em; text-transform:uppercase; border:1px solid transparent; }
@@ -216,7 +218,8 @@
   .lgc.off i { background:var(--text-faint)!important; }
   .lgc:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   canvas { width:100%; height:220px; display:block; cursor:crosshair; }
-  .axis-note { font-family:var(--font-mono); font-size:.66rem; color:var(--text-faint); display:flex; justify-content:space-between; margin-top:.35rem; }
+  /* 用 text-dim 而非 text-faint：faint 對比僅 3.31:1 未達 WCAG AA 4.5:1 */
+  .axis-note { font-family:var(--font-mono); font-size:.66rem; color:var(--text-dim); display:flex; justify-content:space-between; margin-top:.35rem; }
 
   .tip {
     position:fixed; z-index:50; pointer-events:none; display:none;
@@ -377,7 +380,7 @@
       <div class="card chart-card hoverable">
         <div class="chart-head">
           <h3>散度 · 敘事異常
-            <span class="info" tabindex="0" data-tip="散度＝最近一週的媒體敘事和過去三個月的常態差多遠。虛線是根據歷史自動校準的警戒線——散度衝破警戒線（紅點）代表媒體敘事出現異常轉變，可能是突發事件或刻意帶風向。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg></span>
+            <span class="info" tabindex="0" data-tip="散度＝最近一週的媒體敘事和過去三個月的常態差多遠。虛線為動態警戒線（EWM 均值＋2 標準差，每日更新；舊版用 180 天分位數會凍結數月故已汰換）。重要：經置換檢定 10000 次驗證，散度突破後的價格波動放大倍數 0.98~1.23x、p 值 0.21~0.50，無統計顯著性——此指標僅供觀察媒體敘事結構變化，不作為警報或交易依據。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg></span>
           </h3>
           <div class="legend"><span class="lgc" style="cursor:default"><i id="lgKl"></i>散度</span><span class="lgc" style="cursor:default"><i id="lgTh"></i>警戒線</span></div>
         </div>
@@ -440,7 +443,19 @@
     </div>
   </div>
 
-  <!-- ===== 分頁 5：美股排行（僅 US 群組出現） ===== -->
+  <!-- ===== 分頁 5：資料可信度 ===== -->
+  <div class="tabpage" id="pgTrust">
+    <div class="card chart-card hoverable">
+      <div class="chart-head">
+        <h3>資料來源與可信度
+          <span class="info" tabindex="0" data-tip="每個數字的出處、更新頻率、已知限制與完整度。所有統計結論都附可獨立複驗的方法，程式碼在 validation/ 目錄。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></svg></span>
+        </h3>
+      </div>
+      <div id="trustBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== 分頁 6：美股排行（僅 US 群組出現） ===== -->
   <div class="tabpage" id="pgUS">
     <div class="card chart-card hoverable">
       <div class="chart-head"><h3>美股語料聲量排行 · 近 7 天（點擊切換標的）</h3></div>
@@ -463,6 +478,11 @@ const D = window.RADAR_DATA;
 const $ = id => document.getElementById(id);
 const fmt = (v,n=2) => v==null ? "—" : (+v).toFixed(n);
 const pct = v => (v>=0?'+':'') + v.toFixed(2) + '%';
+
+/* 注意力警戒值：與 radar.py 的 ATTN_THRESHOLD 保持一致。
+   由 2.0 上調為 2.5 —— 事件研究(5資產×362天、置換檢定10000次、BH-FDR校正)顯示
+   z>2.0 僅 1D 顯著、3D/5D 不顯著；z>2.5 才在 1D/3D/5D/10D 全期間穩定顯著。 */
+const ATTN_TH = 2.5;
 
 /* ================= 偏好 ================= */
 const PREFS_KEY = 'radar_prefs_v2';
@@ -540,6 +560,7 @@ const TABS = [
   { id:'pgEvents',   label:'突破對照' },
   { id:'pgLead',     label:'領先關係' },
   { id:'pgCorpus',   label:'語料頭條' },
+  { id:'pgTrust',    label:'資料可信度' },
   { id:'pgUS',       label:'美股排行', groupOnly:true },
 ];
 function setTab(i){ prefs.tab = i; savePrefs(); render(); }
@@ -597,18 +618,39 @@ function verdictOf(te){
   return { txt:'互不領先', sub:'新聞與價格目前互相預測不了對方，新聞熱度沒有方向性參考價值', color:'var(--text-dim)' };
 }
 
+/* 散度方向標示：散度只說「敘事變了多少」，方向說「往哪邊變」。
+   刻意不對方向做多空解讀 —— 有向散度僅 5D 單點 p=0.048、樣本 8~10 次，
+   不足以支撐「轉悲觀=看多」這種結論。這裡只陳述事實。 */
+function klDirTag(dir){
+  if (dir == null) return '';
+  const strong = Math.abs(dir) >= 0.15;
+  if (!strong) return `<div style="font-size:.62rem;color:var(--text-dim);margin-top:.3rem;font-family:var(--font-mono)">敘事方向 · 無明顯偏移</div>`;
+  const up = dir > 0;
+  return `<div style="font-size:.62rem;margin-top:.3rem;font-family:var(--font-mono);color:${up?'var(--c-pos)':'var(--c-neg)'}">
+    敘事${up?'轉樂觀':'轉悲觀'} ${dir>0?'+':''}${(+dir).toFixed(2)}</div>`;
+}
+
 /* ================= 統計卡 ================= */
 function buildStats(a){
-  const attnAlert = a.alerts.attention_spike, klAlert = a.alerts.kl_breach;
+  const attnAlert = a.alerts.attention_spike, klAlert = a.alerts.kl_observed;
   const v = verdictOf(a.te);
+  const L = a.latest || {};
+  const prov = L.is_provisional;
+  // 未定版：GDELT 當日資料仍在滾動，清晨分母偏小會虛高。圖表照顯示但明確標記。
+  const provTag = prov
+    ? ' <span class="badge" style="border-color:var(--text-dim);color:var(--text-dim);font-size:.56rem;padding:.18rem .4rem">今日未定版</span>' : '';
+  const zShow = prov && L.attn_z_settled != null ? L.attn_z_settled : L.attn_z;
+  const lvl = L.attn_level;
   $('stats').innerHTML = `
     <div class="card stat">
-      <div class="lbl">注意力指數 ${INFO_ICO('衡量新聞量偏離自己正常水準的程度。超過 2 代表媒體注意力異常激增。')} <span class="badge ${attnAlert?'warn':'ok'}">${attnAlert?'激增':'正常'}</span></div>
-      <div class="val" style="color:${attnAlert?'var(--accent)':'var(--text)'}">${fmt(a.latest.attn_z)}</div>
+      <div class="lbl">注意力指數 ${INFO_ICO('新聞量偏離自身常態的標準差倍數。警戒值 2.5（由事件研究校準：z>2.0 在 3D/5D 無統計顯著性，z>2.5 才穩定顯著）。實證：預測「波動放大」而非漲跌方向。')} <span class="badge ${attnAlert?'warn':'ok'}">${attnAlert?(lvl||'激增'):'正常'}</span>${provTag}</div>
+      <div class="val" style="color:${attnAlert?'var(--accent)':'var(--text)'}">${fmt(zShow)}</div>
+      ${prov?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.3rem;font-family:var(--font-mono)">警報依據定版值 · 今日即時 ${fmt(L.attn_z)}</div>`:''}
     </div>
     <div class="card stat">
-      <div class="lbl">散度 ${INFO_ICO('最近一週的媒體敘事和過去三個月常態差多遠。警戒線 '+fmt(a.latest.kl_q95,3)+'，超過代表敘事異常轉變。')} <span class="badge ${klAlert?'warn':'ok'}">${klAlert?'突破':'正常'}</span></div>
-      <div class="val" style="color:${klAlert?'var(--accent)':'var(--text)'}">${fmt(a.latest.kl,3)}</div>
+      <div class="lbl">散度 ${INFO_ICO('近一週語調分佈 vs 前三個月的 KL 散度，衡量「敘事結構改變了多少」。散度本身不含方向，故另標示語調是轉樂觀還是轉悲觀。檢定結果：散度突破後的波動放大無統計顯著性（p 0.21~0.50），已降級為觀察指標不發警報；有向版本僅 5D 單點 p=0.048、樣本 8~10 次，不足以認定為可用訊號。')} <span class="badge" style="border-color:var(--text-dim);color:var(--text-dim)">觀察</span></div>
+      <div class="val" style="color:var(--text)">${fmt(L.kl,3)}</div>
+      ${klDirTag(L.kl_dir)}
     </div>
     <div class="card stat">
       <div class="lbl">媒體語調 ${INFO_ICO('媒體報導的平均情緒，正值偏樂觀、負值偏悲觀。')}</div>
@@ -966,7 +1008,7 @@ function render(){
   const lg = { lgVol:P.vol, lgSpike:P.mark, lgKl:P.kl, lgTh:P.thresh, lgPx:P.price, lgBr:P.thresh };
   for (const k in lg){ const el=$(k); if(el) el.style.background=lg[k]; }
 
-  const spikes = s.vol.map((v,i)=> (s.attn_z[i]!=null && s.attn_z[i]>2) ? v : null);
+  const spikes = s.vol.map((v,i)=> (s.attn_z[i]!=null && s.attn_z[i]>ATTN_TH) ? v : null);
   chart($('cVol'), s.dates, [
     {data:s.vol, c:'vol', fill:true, label:'新聞量%', dp:3},
     {data:spikes, c:'mark', type:'markers', label:'注意力激增'},
@@ -990,6 +1032,61 @@ function render(){
   buildEvents(a);
   buildTE(a);
   buildCorpus(a);
+  buildTrust(a);
+}
+
+/* ================= 資料可信度 ================= */
+function buildTrust(a){
+  const box = $('trustBody'); if(!box) return;
+  const q = a.quality || {};
+  const src = q.sources || {};
+  const n = (a.dates||[]).length;
+  const cnt = k => (a[k]||[]).filter(v=>v!=null).length;
+  const row = (label, val, note) =>
+    `<div style="display:grid;grid-template-columns:8.5rem 1fr;gap:.5rem;padding:.5rem 0;border-bottom:1px solid var(--line)">
+       <div style="font-family:var(--font-mono);font-size:.72rem;color:var(--text-dim);letter-spacing:.04em">${label}</div>
+       <div style="font-size:.86rem;line-height:1.65">${val}${note?`<div style="color:var(--text-dim);font-size:.76rem;margin-top:.2rem">${note}</div>`:''}</div>
+     </div>`;
+  const closeN = cnt('close'), volN = cnt('vol');
+  // 價格缺漏率：股票/期貨約 31% 為週末假日（正常），BTC 7×24 應接近 0
+  const closeRate = n ? (closeN/n*100) : 0;
+  box.innerHTML = `
+    <div style="font-size:.82rem;color:var(--text-dim);line-height:1.75;margin-bottom:1rem">
+      本頁列出每個數字的出處、更新頻率與已知限制。所有統計結論皆可用
+      <code style="font-family:var(--font-mono);font-size:.78rem">validation/</code> 目錄的腳本獨立複驗。
+    </div>
+    <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:.4rem 0 .3rem">資料來源</h4>
+    ${row('新聞量 vol', src.vol || 'GDELT DOC 2.0 timelinevol',
+          '定義為「該主題新聞佔全球媒體總量的百分比」，是分數不是則數。當日未定版：UTC 日界附近分母偏小，數值會虛高，跑完當天才固定。')}
+    ${row('語調 tone', src.tone || 'GDELT DOC 2.0 timelinetone',
+          'GDELT 自有情緒模型對命中文章的平均語調評分。同樣有當日未定版問題。')}
+    ${row('收盤價 close', src.close || 'Yahoo Finance chart v8',
+          '日線收盤價；黃金為期貨 GC=F 結算價。盤中抓取會得到即時價而非定版收盤。')}
+    <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:1.1rem 0 .3rem">本標的完整度</h4>
+    ${row('資料筆數', `${n} 天`,
+          q.settled_through
+            ? `警報採用的最後定版日：${q.settled_through}`
+            : '警報採用的定版日：待下次資料更新後產生（本欄由新版管線寫入）')}
+    ${row('新聞量覆蓋', `${volN} / ${n}（${(volN/Math.max(n,1)*100).toFixed(1)}%）`,
+          q.vol_missing ? `已清洗 ${q.vol_missing} 個缺漏日（vol=0 判定為 GDELT 該日故障，非新聞真的歸零）` : '無缺漏')}
+    ${row('價格覆蓋', `${closeN} / ${n}（${closeRate.toFixed(1)}%）`,
+          closeRate < 80 ? '缺漏主要為週末與假日休市，屬正常現象' : '接近全覆蓋（7×24 交易）')}
+    ${row('未定版天數', `${q.provisional_days!=null?q.provisional_days:1} 天`,
+          '最新一天資料仍在滾動更新，圖表照常顯示但警報不採用。')}
+    <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:1.1rem 0 .3rem">指標效力（實證檢定）</h4>
+    ${row('注意力指數', '<b style="color:var(--c-pos)">有效・已驗證</b>',
+          '事件研究：5 資產 × 362 天、置換檢定 10000 次、BH-FDR 多重比較校正。結論：z>2.5 時事件後波動放大 1D 1.79x／3D 1.47x／5D 1.33x／10D 1.35x，p 值 0.001~0.016 全數通過。<b>但方向性 15 組檢定全數不通過——不能用來預測漲跌</b>。')}
+    ${row('散度 KL', '<b style="color:var(--text-dim)">無顯著性・僅供觀察</b>',
+          '同一套檢定下，散度突破後波動放大僅 0.98~1.23x、p 值 0.21~0.50，未達顯著。已停止以此發送警報，保留圖表供人工觀察敘事結構變化。')}
+    ${row('散度方向', '<b style="color:var(--text-dim)">線索・樣本不足</b>',
+          '散度是純量，敘事「轉樂觀」與「轉悲觀」得分相同但價格意涵相反，方向被丟棄是它測不出訊號的主因之一。加回方向後：突破後 5D 報酬，轉悲觀 +2.63%(n=10) vs 轉樂觀 −1.10%(n=8)。<b>但置換檢定僅 5D 一個期間 p=0.048，1D／3D／10D 皆不顯著</b>——真訊號應多期間一致顯著，此處更像小樣本假象。故僅陳述方向，不做多空解讀，待樣本累積後重驗。')}
+    ${row('訊號有效期', 'D+1 ~ D+5，D+8 後回歸常態',
+          '衰減曲線：D+0 1.75x → D+1 1.38x → D+2 1.20x → D+3 1.19x → D+4 起回落，D+8 之後與常態無異。故建議回檢時點為 D+1／D+3／D+5。')}
+    <div style="margin-top:1.1rem;padding:.75rem .9rem;border:1px solid var(--accent);border-left-width:3px;border-radius:10px;font-size:.8rem;line-height:1.7;color:var(--text);background:transparent">
+      <b style="color:var(--accent)">已知限制</b>：GDELT 只涵蓋公開網路新聞，不含社群媒體與私有終端；語調為英文語料模型，中文報導未納入。
+      樣本僅一年（約 360 天），事件數 30~60 次，屬小樣本統計，結論會隨資料累積而修正。
+      本頁所有數字為研究參考，非投資建議。
+    </div>`;
 }
 
 /* ================= 資訊 tooltip ================= */

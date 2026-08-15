@@ -107,7 +107,19 @@ def gdelt_timeline(query: str, mode: str, cache_key: str) -> pd.Series:
         index=pd.to_datetime([p["date"] for p in pts]).date,
     )
     s.index = pd.to_datetime(s.index)
-    return s.groupby(level=0).mean()
+    s = s.groupby(level=0).mean()
+
+    # vol=0 視為 GDELT 該日缺漏，非「新聞量真的歸零」。
+    # 證據(2026-08-15 稽核)：2025-12-06 XAU/AAPL/BTC 三個不相干資產同時為 0，
+    # 2026-02-28 AAPL/NVDA/MSFT 同時為 0。黃金與比特幣的新聞不可能同日雙雙消失。
+    # 危害：XAU 2025-12-06 的 0 值造成 z=-3.43 的假極值，會污染後續 90 天
+    # 滾動基線的標準差，連帶扭曲之後三個月的所有 z-score。
+    if mode == "timelinevol":
+        zeros = int((s == 0).sum())
+        if zeros:
+            print(f"  [清洗] {cache_key} 發現 {zeros} 個 vol=0（判定為資料缺漏），改為 NaN")
+        s = s.replace(0.0, np.nan)
+    return s
 
 
 def gdelt_articles(query: str, cache_key: str, maxrecords: int = 75) -> list:
@@ -190,16 +202,55 @@ def attention_z(vol: pd.Series, win: int = 90) -> pd.Series:
     return ((vol - mu) / sd).replace([np.inf, -np.inf], np.nan)
 
 
+def is_provisional(idx) -> list:
+    """標記每個日期是否為「當日未定版」資料。
+
+    GDELT timelinevol = 該主題新聞佔全球新聞總量的百分比，是一個「分數」。
+    UTC 當日尚未走完時，分母（全球新聞總量）偏小，同樣的新聞則數會被
+    放大成假性尖峰；當天跑完後數值就定版不再變動。
+
+    實測（2026-08-15）：同一支 API 相隔數小時查詢，8/01~8/14 十四個歷史
+    日期數值完全一致，唯獨當天從 0.1984 變成 0.2410。這是 8/14 清晨警報
+    誤報 attn_z=4.13（定版後實為 0.49）的直接原因。
+    """
+    today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+    return [bool(pd.Timestamp(d).normalize() >= today_utc) for d in idx]
+
+
+# 事件研究實證（2026-08-15，樣本：5 資產 × 362 天，置換檢定 10000 次）
+#   注意力激增「不預測漲跌方向」，但顯著「預測波動放大」：
+#     z>2.0  1D 1.46x(p=.010) / 3D 1.20x(p=.067 不顯著) / 5D 1.15x(p=.110 不顯著)
+#     z>2.5  1D 1.79x(p<.001) / 3D 1.47x(p=.002) / 5D 1.33x(p=.011) / 10D 1.35x(p=.007)
+#     z>3.0  1D 1.72x(p=.003) / 3D 1.55x(p=.002) / 5D 1.49x(p=.003) / 10D 1.44x(p=.007)
+#   結論：2.0 在多數期間不顯著，2.5 才是全期間穩定顯著的門檻，故上調。
+ATTN_LEVELS = [(3.0, "極高"), (2.5, "高"), (2.0, "中")]
+
+
+def attn_level(z: float) -> str | None:
+    """把 z 值轉成強度分級；低於最低門檻回 None。"""
+    if z is None or pd.isna(z):
+        return None
+    for th, name in ATTN_LEVELS:
+        if z > th:
+            return name
+    return None
+
+
 def kl_series(tone: pd.Series, recent: int = 7, base: int = 90, bins: int = 5) -> pd.Series:
-    """每日 KL 散度：近 7 天語調分佈 vs 之前 90 天基線分佈。"""
-    edges = np.unique(np.quantile(tone.dropna(), np.linspace(0, 1, bins + 1)))
-    if len(edges) < 3:
-        return pd.Series(dtype=float)
+    """每日 KL 散度：近 7 天語調分佈 vs 之前 90 天基線分佈。
+
+    分箱邊界只用「當下可見的基線區間」計算。原本用全期間 tone 取分位數當
+    edges，等於今天的 KL 用到了未來資料（前視偏誤），回測會虛高。
+    """
     eps = 1e-6
     vals, idx, out = tone.values, tone.index, {}
     for t in range(recent + base, len(vals)):
         rec = vals[t - recent + 1: t + 1]
         bas = vals[t - recent - base + 1: t - recent + 1]
+        # edges 僅由基線段決定，不含 recent 段、更不含未來
+        edges = np.unique(np.quantile(bas[~np.isnan(bas)], np.linspace(0, 1, bins + 1)))
+        if len(edges) < 3:
+            continue
         p, _ = np.histogram(rec, bins=edges)
         q, _ = np.histogram(bas, bins=edges)
         p = (p + eps) / (p + eps).sum()
@@ -208,8 +259,39 @@ def kl_series(tone: pd.Series, recent: int = 7, base: int = 90, bins: int = 5) -
     return pd.Series(out)
 
 
-def rolling_q95(s: pd.Series, win: int = 180) -> pd.Series:
-    return s.rolling(win, min_periods=60).quantile(0.95).shift(1)
+def kl_direction(tone: pd.Series, recent: int = 7, base: int = 90) -> pd.Series:
+    """散度的「方向」：近期語調均值 − 基線語調均值。
+
+    為什麼需要它：KL 散度是「兩個分布差多遠」的純量，敘事轉樂觀與轉悲觀
+    都會得到同樣的高分，但兩者的價格意涵相反。方向資訊被丟棄，是這個指標
+    測不出訊號的主因之一。
+
+    診斷數據（validation/v6_signed_kl.py，2026-08-15）：
+      散度突破後 5D 報酬 —— 敘事轉悲觀 +2.63%(n=10) vs 轉樂觀 −1.10%(n=8)
+      置換檢定僅 5D 一個期間 p=0.048，1D/3D/10D 皆不顯著。
+    => 樣本太小（8~10 次），不足以認定為可用訊號，但足以說明「丟掉方向
+       就等於把兩種相反情境混在一起互相抵消」。故保留方向供人工判讀。
+    """
+    m_rec = tone.rolling(recent, min_periods=max(3, recent // 2)).mean()
+    m_bas = tone.shift(recent).rolling(base, min_periods=30).mean()
+    return m_rec - m_bas
+
+
+def kl_threshold(s: pd.Series, span: int = 90, k: float = 2.0) -> pd.Series:
+    """KL 動態警戒線 = 指數加權均值 + k×指數加權標準差。
+
+    取代原本的 rolling(180).quantile(0.95)。舊法有嚴重缺陷：分位數是「排序
+    取位置」，只要一批極值還在 180 天窗內，95 分位就固定落在同一個數值上。
+
+    實測（XAU，2026-08-15）：2026-02 初一次語調事件把 KL 推到 1.76，之後
+    警戒線凍在 1.1280 從 2026-05 一路平到 08-04，長達三個多月完全不動。
+    同期 KL 實際只在 0.13~0.69 遊走，門檻等於形同虛設，任何異常都無法觸發。
+
+    EWM 對單次極值不敏感（權重隨時間衰減），且每天都會更新，不會凍結。
+    """
+    m = s.ewm(span=span, min_periods=30).mean()
+    sd = s.ewm(span=span, min_periods=30).std()
+    return (m + k * sd).shift(1)
 
 
 def discretize(x: np.ndarray, k: int = 3) -> np.ndarray:
@@ -282,7 +364,10 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
     df["attn_z"] = attention_z(df["vol"])
     kl = kl_series(df["tone"])
     df["kl"] = kl
-    df["kl_q95"] = rolling_q95(df["kl"].dropna()) if kl.notna().sum() > 60 else np.nan
+    # 動態門檻改用 EWM（原 rolling_q95 會凍結數月，見 kl_threshold docstring）
+    df["kl_q95"] = kl_threshold(df["kl"].dropna()) if kl.notna().sum() > 40 else np.nan
+    df["kl_dir"] = kl_direction(df["tone"])   # 散度方向：+轉樂觀 / −轉悲觀
+    df["provisional"] = is_provisional(df.index)
 
     te_info = None
     if close is not None:
@@ -299,9 +384,28 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
         df = df.join(close.rename("close"))
 
     last = df.dropna(subset=["kl"]).iloc[-1] if df["kl"].notna().any() else df.iloc[-1]
-    alert_kl = bool(df["kl"].notna().any() and pd.notna(last.get("kl_q95"))
-                    and last["kl"] > last["kl_q95"])
-    alert_attn = bool(pd.notna(df["attn_z"].iloc[-1]) and df["attn_z"].iloc[-1] > 2.0)
+
+    # === 警報只採用「已定版」資料 ===
+    # GDELT 當日資料未定版，清晨(UTC 日界附近)分母偏小會產生假性尖峰。
+    # 2026-08-14 07:11 的警報 attn_z=4.13，當日走完定版後實為 0.49 —— 純假訊號。
+    # 故警報一律取最後一個已定版日；圖表仍顯示當日即時值（標記為未定版）。
+    settled = df[~df["provisional"]]
+    src = settled if len(settled) else df
+    z_settled = src["attn_z"].iloc[-1] if len(src) else np.nan
+    z_date = src.index[-1].strftime("%Y-%m-%d") if len(src) else None
+
+    # 閾值 2.0 -> 2.5：事件研究(5資產×362天, 置換檢定10000次, BH-FDR校正)顯示
+    # z>2.0 僅 1D 顯著、3D/5D 不顯著；z>2.5 才在 1D/3D/5D/10D 全期間穩定顯著。
+    alert_attn = bool(pd.notna(z_settled) and z_settled > ATTN_THRESHOLD)
+
+    # KL 散度降級為「觀察指標」，不再觸發警報。
+    # 驗證結論(validation/v2_divergence.py)：KL 突破事件後的波動放大倍數
+    #   舊法 rolling.q95 : 1D 1.23x (p=0.21) / 3D 1.10x (p=0.30) / 5D 1.17x (p=0.21)
+    #   新法 EWM+2sd     : 1D 0.98x (p=0.50) / 3D 0.91x (p=0.65) / 5D 1.02x (p=0.43)
+    # 兩法皆無統計顯著性 —— 這個指標本身不具預測力，修門檻也救不回來。
+    # 保留在 UI 供人工觀察語調結構變化，但不應以此發警報製造行動壓力。
+    kl_breach_raw = bool(df["kl"].notna().any() and pd.notna(last.get("kl_q95"))
+                         and last["kl"] > last["kl_q95"])
 
     # 個人化基線：過去 90 天的語調分位數，用於警報文字
     tone90 = df["tone"].tail(90).dropna()
@@ -311,26 +415,54 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
         "p90": round(float(tone90.quantile(0.90)), 2),
     } if len(tone90) >= 30 else None
 
+    # 資料品質評分（供 UI 顯示可信度，讓使用者知道這批數字有多可靠）
+    prov_days = int(df["provisional"].sum())
+    vol_gap = int(df["vol"].isna().sum())
+    close_days = int(df["close"].notna().sum()) if "close" in df else 0
+    quality = {
+        "rows": len(df),
+        "provisional_days": prov_days,          # 未定版天數（通常 0 或 1）
+        "vol_missing": vol_gap,                 # 清洗掉的缺漏日
+        "close_days": close_days,
+        "settled_through": z_date,              # 警報採用的最後定版日
+        "sources": {
+            "vol": "GDELT DOC 2.0 timelinevol（新聞佔全球總量百分比・當日未定版）",
+            "tone": "GDELT DOC 2.0 timelinetone（平均語調・當日未定版）",
+            "close": f"Yahoo Finance chart v8（{meta.get('yahoo', 'n/a')}・日線收盤）",
+        },
+    }
+
     asset = {
         "id": aid, "name": meta["name"], "note": meta.get("note", ""),
         "dates": [d.strftime("%Y-%m-%d") for d in df.index],
         "vol": jlist(df["vol"]), "tone": jlist(df["tone"]),
         "attn_z": jlist(df["attn_z"]), "kl": jlist(df["kl"]),
         "kl_q95": jlist(df["kl_q95"]) if "kl_q95" in df else [],
+        "kl_dir": jlist(df["kl_dir"]) if "kl_dir" in df else [],
         "close": jlist(df["close"]) if "close" in df else [],
+        "provisional": [bool(x) for x in df["provisional"]],
         "te": te_info,
         "articles": articles[:40],
         "corpus_dist": corpus_dist,
         "tone_baseline": tone_baseline,
-        "alerts": {"kl_breach": alert_kl, "attention_spike": alert_attn},
+        "quality": quality,
+        # kl_breach 保留欄位供 UI 標示，但已不觸發 Telegram 警報（無統計顯著性）
+        "alerts": {"kl_breach": False, "kl_observed": kl_breach_raw,
+                   "attention_spike": alert_attn},
         "latest": {
+            # 圖表用當日即時值（可能未定版），警報用已定版值，兩者分開不混淆
             "attn_z": None if pd.isna(df["attn_z"].iloc[-1]) else round(float(df["attn_z"].iloc[-1]), 2),
+            "attn_z_settled": None if pd.isna(z_settled) else round(float(z_settled), 2),
+            "attn_level": attn_level(z_settled),
+            "is_provisional": bool(df["provisional"].iloc[-1]),
             "kl": None if pd.isna(last.get("kl", np.nan)) else round(float(last["kl"]), 4),
             "kl_q95": None if pd.isna(last.get("kl_q95", np.nan)) else round(float(last["kl_q95"]), 4),
+            "kl_dir": None if pd.isna(last.get("kl_dir", np.nan)) else round(float(last["kl_dir"]), 3),
             "tone": None if pd.isna(df["tone"].iloc[-1]) else round(float(df["tone"].iloc[-1]), 2),
         },
     }
-    print(f"[{aid}] 完成: {len(df)} 天, KL警報={alert_kl}, 注意力警報={alert_attn}, 頭條={len(articles)} 篇")
+    print(f"[{aid}] 完成: {len(df)} 天, 注意力警報={alert_attn}"
+          f"(定版z={z_settled:.2f}@{z_date}), KL觀察={kl_breach_raw}, 頭條={len(articles)} 篇")
     return asset
 
 
@@ -345,7 +477,12 @@ def fetch_pair(meta: dict):
 # ---------- Telegram 警報 ----------
 
 ALERT_CONFIG = "alert_config.json"
-ATTN_THRESHOLD = 2.0
+
+# 由 2.0 上調為 2.5：事件研究（5 資產 × 362 天、置換檢定 10000 次、BH-FDR 校正）
+#   z>2.0：僅 1D 通過（p=.007），3D p=.057、5D p=.108 皆不顯著 -> 門檻過鬆、雜訊多
+#   z>2.5：1D/3D/5D/10D 全部通過（p=.001~.016）-> 穩定顯著
+# 完整證據見 validation/v1_attention.py
+ATTN_THRESHOLD = 2.5
 
 
 def flatten_assets(result: dict) -> list:
@@ -390,17 +527,19 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
         was = prev.get(a["id"], {})
         if a["alerts"].get("attention_spike") and not was.get("attention_spike"):
             prior = prior_breach_date(dates, a["attn_z"], ATTN_THRESHOLD)
+            z = latest.get("attn_z_settled", latest["attn_z"])
+            lvl = latest.get("attn_level") or "中"
+            # 依實證強度給出對應的波動預期（來源：validation/v1_attention.py）
+            exp = {"極高": "1D 1.7x／3D 1.6x／5D 1.5x",
+                   "高": "1D 1.8x／3D 1.5x／5D 1.3x",
+                   "中": "1D 1.5x（3D 以後不顯著）"}[lvl]
             lines.append(
-                "• 觸發：新聞注意力激增\n"
-                f"  目前注意力指數：{latest['attn_z']}（警戒值 {ATTN_THRESHOLD:.2f}，平時約 0）\n"
-                f"  上次同級激增：{days_ago_str(prior)}"
-            )
-        if a["alerts"].get("kl_breach") and not was.get("kl_breach"):
-            prior = prior_breach_date(dates, a["kl"], a.get("kl_q95") or [])
-            lines.append(
-                "• 觸發：散度突破警戒線（媒體敘事異常轉變）\n"
-                f"  目前散度：{latest['kl']}（警戒線 {latest['kl_q95']}）\n"
-                f"  上次突破：{days_ago_str(prior)}"
+                f"• 觸發：新聞注意力激增（強度：{lvl}）\n"
+                f"  注意力指數：{z}（警戒值 {ATTN_THRESHOLD:.2f}，平時約 0）\n"
+                f"  已定版資料截至：{a.get('quality', {}).get('settled_through', 'n/a')}\n"
+                f"  上次同級激增：{days_ago_str(prior)}\n"
+                f"  歷史行為：不預測漲跌方向，但波動放大 {exp}\n"
+                f"  建議回檢：D+1 / D+3 / D+5（D+8 後已回歸常態）"
             )
         if lines:
             tone = latest["tone"]

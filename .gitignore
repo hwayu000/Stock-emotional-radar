@@ -15,6 +15,12 @@ __pycache__/
 # 產出的數據（可選：若想讓 GitHub Pages 直接展示，移除下面這行）
 # ui/data.js
 
+# 本機抽幀驗證產物（截圖、測試用資料副本）
+_check/
+
+# 跨對話進度存檔（本機用）
+_state/
+
 # OS
 Thumbs.db
 .DS_Store
