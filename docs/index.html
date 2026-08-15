@@ -351,7 +351,8 @@
 
   /* 用 text-dim 而非 text-faint：faint 在此字級下對比僅 2.54:1，未達 WCAG AA 4.5:1 */
   .foot { margin-top:2rem; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); line-height:1.8; text-align:center; }
-  .foot a { color:var(--accent); text-decoration:none; }
+  /* 加底線提升可辨識度：純橘字在深底上對比僅 2.54:1，未達 WCAG AA */
+  .foot a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
 
   @media (max-width:640px){
     .te-grid{grid-template-columns:1fr;} h1{font-size:1.6rem;}
@@ -1228,10 +1229,31 @@ function buildTrust(a){
         <p><b style="color:var(--c-neg)">不會告訴你漲還是跌。</b>
            這點測過 15 次全部失敗 —— 新聞熱度預測不了方向。</p>
         <p><b style="color:var(--accent)">會告訴你「要開始震了」。</b>
-           平常一天上下動約 1.06%，注意力飆高後隔天平均動 1.90%，接近兩倍；
-           3 天內動 3.15%、5 天內 3.74%。</p>
+           但幅度沒有想像中大：以黃金為例，平常 3 天動 1.06%，
+           激增後動 1.47%，約 <b>1.4 倍</b>。</p>
         <p class="plain-key">講白話：K 線的實體和影線會變長，但往上往下不知道。<br>
            所以它的用途是 —— <b>該調倉位、該拉停損，不是該追多或追空。</b></p>
+        <p style="font-size:.8rem;color:var(--text-dim)">
+           ※ 此數字已用 <b>8.6 年、3126 天、55 個事件</b>驗證，並通過樣本外檢定
+           （後半段獨立資料仍成立）。先前用一年樣本得到的 1.79 倍是高估。</p>
+      </div>
+
+      <div class="plain-block">
+        <div class="plain-q">哪些標的能信？</div>
+        <p>大樣本驗證後，<b>三個標的表現差很多</b>：</p>
+        <ul class="plain-list">
+          <li><span class="tag pos">黃金 XAU</span>
+              <b>最可信</b> —— 隔天、3 天、5 天都成立（1.37~1.40 倍），
+              且通過樣本外驗證</li>
+          <li><span class="tag acc">比特幣 BTC</span>
+              <b>只有隔天有效</b>（1.42 倍），3 天後訊號就消失</li>
+          <li><span class="tag acc">輝達 NVDA</span>
+              <b>只有隔天有效</b>（1.69 倍），3 天後訊號就消失</li>
+          <li><span class="tag dim">蘋果・微軟</span>
+              資料還在抓，尚未驗證</li>
+        </ul>
+        <p class="plain-key">所以回頭檢查的時機要看標的：<b>黃金看 D+1／D+3／D+5</b>，
+           <b>BTC 和 NVDA 只看隔天就好</b>，再往後沒有參考價值。</p>
       </div>
 
       <div class="plain-block">
@@ -1251,10 +1273,12 @@ function buildTrust(a){
       </div>
 
       <div class="plain-block">
-        <div class="plain-q">訊號能撐多久？</div>
-        <p>激增當天最強，之後遞減：<b>D+1</b> 還有 1.38 倍、<b>D+3</b> 剩 1.19 倍、
-           <b>D+4</b> 起回到常態，<b>D+8</b> 之後完全沒差。</p>
-        <p class="plain-key">要回頭檢查的話，看 <b>D+1 / D+3 / D+5</b> 就夠，超過一週不用再追。</p>
+        <div class="plain-q">閾值為什麼設 2.5 而不是 2？</div>
+        <p>大樣本驗證的直接結果：黃金在 <b>z&gt;2.0</b> 時，
+           隔天、3 天、5 天、10 天<b>全部都不顯著</b>（統計上跟隨機沒兩樣）；
+           要到 <b>z&gt;2.5</b> 才全數通過。</p>
+        <p class="plain-key">白話：門檻設 2 的話，發出來的警報有一半以上是雜訊。
+           設 2.5 警報會變少，但發出來的才有意義。</p>
       </div>
 
       <div class="plain-block">
@@ -1294,8 +1318,12 @@ function buildTrust(a){
     ${row('未定版天數', `${q.provisional_days!=null?q.provisional_days:1} 天`,
           '最新一天資料仍在滾動更新，圖表照常顯示但警報不採用。')}
     <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:1.1rem 0 .3rem">指標效力（實證檢定）</h4>
-    ${row('注意力指數', '<b style="color:var(--c-pos)">有效・已驗證</b>',
-          '事件研究：5 資產 × 362 天、置換檢定 10000 次、BH-FDR 多重比較校正。結論：z>2.5 時事件後波動放大 1D 1.79x／3D 1.47x／5D 1.33x／10D 1.35x，p 值 0.001~0.016 全數通過。<b>但方向性 15 組檢定全數不通過——不能用來預測漲跌</b>。')}
+    ${row('注意力指數 · 黃金', '<b style="color:var(--c-pos)">已驗證（含樣本外）</b>',
+          '大樣本回測：2018-01~2026-08 共 3126 天、55 個事件（z>2.5）、置換檢定 10000 次。全樣本 1D 1.37x(p=.038)／3D 1.39x(p=.006)／5D 1.40x(p=.003)／10D 1.24x(p=.028)。<b>樣本外驗證通過</b>：前半(2018~2022)校準、後半(2022~2026)獨立驗證，3D 1.40x(p=.012)、5D 1.43x(p=.004)，後半段更強，排除過度擬合。<b>方向性 15 組檢定全數不通過——不能預測漲跌</b>。')}
+    ${row('注意力指數 · BTC/NVDA', '<b style="color:var(--c-pos);opacity:.7">有證據（僅 1D）</b>',
+          '同一套大樣本檢定：BTC 1D 1.42x(p=.011) 樣本外通過，但 3D(p=.090)、5D(p=.368) 皆未通過；NVDA 1D 1.69x(p=.003) 通過，3D(p=.316)、5D(p=.642) 未通過。<b>兩者訊號只撐得住一天</b>，回檢只看隔天即可。AAPL/MSFT 資料抓取中，尚未驗證。')}
+    ${row('先前結論的修正', '<b style="color:var(--accent)">效力被高估</b>',
+          '一年小樣本曾報 3D 1.47x，大樣本為 1.39x —— 方向正確但幅度縮水。且「D+1/D+3/D+5 回檢」原本套用於所有資產，實際上<b>只適用黃金</b>；BTC 與 NVDA 的訊號 3D 即失效。此為樣本擴充後主動修正，非事後調整。')}
     ${row('散度 KL', '<b style="color:var(--text-dim)">無顯著性・僅供觀察</b>',
           '同一套檢定下，散度突破後波動放大僅 0.98~1.23x、p 值 0.21~0.50，未達顯著。已停止以此發送警報，保留圖表供人工觀察敘事結構變化。')}
     ${row('散度方向', '<b style="color:var(--text-dim)">線索・樣本不足</b>',
@@ -1315,8 +1343,8 @@ function buildTrust(a){
     </div>
     <div style="margin-top:1.1rem;padding:.75rem .9rem;border:1px solid var(--accent);border-left-width:3px;border-radius:10px;font-size:.8rem;line-height:1.7;color:var(--text);background:transparent">
       <b style="color:var(--accent)">已知限制</b>：GDELT 只涵蓋公開網路新聞，不含社群媒體與私有終端；語調為英文語料模型，中文報導未納入。
-      目前樣本僅一年（約 360 天），事件數 30~60 次，屬小樣本統計。
-      <b>正在擴充至 2018 起約 8.6 年</b>（事件數預計增至 300~500），屆時全部結論會重新檢定並更新分級。
+      <b>XAU / BTC / NVDA 已完成 8.6 年大樣本驗證</b>（3126 天，事件數 55~121，含樣本外檢定）；
+      AAPL / MSFT 語調資料抓取中，仍為一年樣本，其結論待更新。
       本頁所有數字為研究參考，非投資建議。
     </div>
     </details>`;

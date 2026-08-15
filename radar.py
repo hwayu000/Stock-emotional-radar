@@ -500,6 +500,26 @@ def fetch_pair(meta: dict):
 
 ALERT_CONFIG = "alert_config.json"
 
+# 各資產的實證表現與回檢建議。
+# 來源：validation/v12_bigsample.py —— 2018-01-01~2026-08-15 共 3126 天大樣本，
+# 事件數 55~121，含樣本外驗證（前半校準／後半獨立驗證）。
+#   XAU  : 1D 1.37x(p=.038) 3D 1.39x(p=.006) 5D 1.40x(p=.003) 10D 1.24x(p=.028)
+#          樣本外 3D 1.40x(p=.012)、5D 1.43x(p=.004) 皆通過 -> 全期間可信
+#   BTC  : 1D 1.42x(p=.011) 樣本外通過；3D(p=.090)、5D(p=.368) 未通過
+#   NVDA : 1D 1.69x(p=.003) 樣本外通過；3D(p=.316)、5D(p=.642) 未通過
+# 先前用一年小樣本得到的統一數值（1D 1.79x／3D 1.47x）已證實高估，且不該不分資產。
+ASSET_PROFILE = {
+    "XAU":  {"exp": "1D 1.4x／3D 1.4x／5D 1.4x（已通過樣本外驗證）",
+             "recheck": "D+1 / D+3 / D+5"},
+    "BTC":  {"exp": "1D 1.4x（3D 之後不顯著）",
+             "recheck": "D+1（3D 後訊號已消失，不需再追）"},
+    "NVDA": {"exp": "1D 1.7x（3D 之後不顯著）",
+             "recheck": "D+1（3D 後訊號已消失，不需再追）"},
+    # 尚未完成大樣本驗證的資產，措辭須保守
+    "_default": {"exp": "尚未完成大樣本驗證，效力未知",
+                 "recheck": "D+1 / D+3（僅供參考，此標的尚未驗證）"},
+}
+
 # 由 2.0 上調為 2.5：事件研究（5 資產 × 362 天、置換檢定 10000 次、BH-FDR 校正）
 #   z>2.0：僅 1D 通過（p=.007），3D p=.057、5D p=.108 皆不顯著 -> 門檻過鬆、雜訊多
 #   z>2.5：1D/3D/5D/10D 全部通過（p=.001~.016）-> 穩定顯著
@@ -551,10 +571,12 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
             prior = prior_breach_date(dates, a["attn_z"], ATTN_THRESHOLD)
             z = latest.get("attn_z_settled", latest["attn_z"])
             lvl = latest.get("attn_level") or "中"
-            # 依實證強度給出對應的波動預期（來源：validation/v1_attention.py）
-            exp = {"極高": "1D 1.7x／3D 1.6x／5D 1.5x",
-                   "高": "1D 1.8x／3D 1.5x／5D 1.3x",
-                   "中": "1D 1.5x（3D 以後不顯著）"}[lvl]
+            # 波動預期與回檢建議改為「依資產」給值。
+            # 來源：validation/v12_bigsample.py（2018-01~2026-08 共 3126 天大樣本，
+            # 含樣本外驗證）。先前用一年小樣本的統一數值已證實高估且不分資產。
+            prof = ASSET_PROFILE.get(a["id"], ASSET_PROFILE["_default"])
+            exp = prof["exp"]
+            recheck = prof["recheck"]
             # 當日波動情境決定這則訊號可不可信（見 analyze() 內 vol_regime 註解）
             vr = a.get("vol_regime") or {}
             conf = {
@@ -571,7 +593,7 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
                 f"  已定版資料截至：{a.get('quality', {}).get('settled_through', 'n/a')}\n"
                 f"  上次同級激增：{days_ago_str(prior)}\n"
                 f"  歷史行為：不預測漲跌方向，但波動放大 {exp}\n"
-                f"  建議回檢：D+1 / D+3 / D+5（D+8 後已回歸常態）"
+                f"  建議回檢：{recheck}"
                 + (f"\n  當日波動：{vr.get('today_move')}%（{vr.get('level')}檔）\n"
                    f"  {conf}" if conf else "")
             )
