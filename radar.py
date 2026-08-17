@@ -391,17 +391,23 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
     # 因為市場本身有波動聚集現象（黃金 22.6 年實測：昨日波動前 5% 即可得 1D
     # 4.04x，遠勝注意力的 1.79x），且激增日當天波動本就是平時的 2.11 倍，
     # 混淆確實存在。控制後才知道訊號真正的適用區間。
+    # ⚠️ 波動情境必須與注意力指數取同一天，否則卡片會混日期：
+    #    大字取 8/16 定版 z，波動卻取 8/17 即時值 —— 兩個不同日子疊在同一張卡上，
+    #    使用者無從分辨（2026-08-17 實際踩到）。故此處一律對齊「最後定版日」。
     vol_regime = None
     if "close" in df and df["close"].notna().sum() > 60:
-        dret = df["close"].pct_change().abs() * 100
+        dret = (df["close"].pct_change().abs() * 100)
+        # 只取已定版日的收盤變動，與 z_settled 同源
+        dret_settled = dret[~df["provisional"]].dropna()
         cur = dret.dropna()
-        if len(cur) > 30:
-            today_move = float(cur.iloc[-1])
+        if len(cur) > 30 and len(dret_settled):
+            today_move = float(dret_settled.iloc[-1])
             lo, hi = float(cur.quantile(0.50)), float(cur.quantile(0.90))
             vol_regime = {
                 "today_move": round(today_move, 3),
                 "level": "低" if today_move < lo else ("中" if today_move < hi else "高"),
                 "p50": round(lo, 3), "p90": round(hi, 3),
+                "date": dret_settled.index[-1].strftime("%Y-%m-%d"),
             }
 
     last = df.dropna(subset=["kl"]).iloc[-1] if df["kl"].notna().any() else df.iloc[-1]
@@ -472,9 +478,13 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
         "alerts": {"kl_breach": False, "kl_observed": kl_breach_raw,
                    "attention_spike": alert_attn},
         "latest": {
-            # 圖表用當日即時值（可能未定版），警報用已定版值，兩者分開不混淆
+            # 圖表用當日即時值（可能未定版），警報用已定版值，兩者分開不混淆。
+            # 兩者各自帶日期 —— UI 必須標出來，否則使用者看到「大字負值 vs 曲線正值」
+            # 會誤判成資料錯誤（2026-08-17 實際發生）。
             "attn_z": None if pd.isna(df["attn_z"].iloc[-1]) else round(float(df["attn_z"].iloc[-1]), 2),
+            "attn_z_date": df.index[-1].strftime("%Y-%m-%d"),
             "attn_z_settled": None if pd.isna(z_settled) else round(float(z_settled), 2),
+            "attn_z_settled_date": z_date,
             "attn_level": attn_level(z_settled),
             "is_provisional": bool(df["provisional"].iloc[-1]),
             "kl": None if pd.isna(last.get("kl", np.nan)) else round(float(last["kl"]), 4),

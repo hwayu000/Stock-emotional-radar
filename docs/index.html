@@ -773,8 +773,17 @@ function regimeTag(vr, isAlert){
     '高': ['var(--accent)',   '價格已自帶訊號'],
   };
   const [col, txt] = map[vr.level] || ['var(--text-dim)', ''];
+  // 後端已對齊定版日；標日期避免與上方大字混成兩個不同的日子
+  const d = vr.date ? md(vr.date) + ' ' : '';
   return `<div style="font-size:.62rem;margin-top:.3rem;font-family:var(--font-mono);color:${col}">
-    當日波動 ${vr.today_move}%（${vr.level}檔）${isAlert ? ' · ' + txt : ''}</div>`;
+    ${d}波動 ${vr.today_move}%（${vr.level}檔）${isAlert ? ' · ' + txt : ''}</div>`;
+}
+
+/* 日期簡寫 2026-08-16 → 8/16 */
+function md(s){
+  if (!s) return '';
+  const p = String(s).split('-');
+  return p.length === 3 ? `${+p[1]}/${+p[2]}` : s;
 }
 
 /* ================= 統計卡 ================= */
@@ -786,13 +795,17 @@ function buildStats(a){
   // 未定版：GDELT 當日資料仍在滾動，清晨分母偏小會虛高。圖表照顯示但明確標記。
   const provTag = prov
     ? ' <span class="badge" style="border-color:var(--text-dim);color:var(--text-dim);font-size:.56rem;padding:.18rem .4rem">今日未定版</span>' : '';
-  const zShow = prov && L.attn_z_settled != null ? L.attn_z_settled : L.attn_z;
+  const useSettled = prov && L.attn_z_settled != null;
+  const zShow = useSettled ? L.attn_z_settled : L.attn_z;
+  // 大字是哪一天的 —— 沒標日期時使用者會誤以為是今天，進而覺得「數值負、曲線正」是 bug
+  const zDate = useSettled ? (L.attn_z_settled_date || null) : (L.attn_z_date || null);
   const lvl = L.attn_level;
   $('stats').innerHTML = `
     <div class="card stat">
       <div class="lbl">注意力指數 ${INFO_ICO('新聞量偏離自身常態的標準差倍數。警戒值 2.5（由事件研究校準：z>2.0 在 3D/5D 無統計顯著性，z>2.5 才穩定顯著）。實證：預測「波動放大」而非漲跌方向。')} <span class="badge ${attnAlert?'warn':'ok'}">${attnAlert?(lvl||'激增'):'正常'}</span>${provTag}</div>
       <div class="val" style="color:${attnAlert?'var(--accent)':'var(--text)'}">${fmt(zShow)}</div>
-      ${prov?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.3rem;font-family:var(--font-mono)">警報依據定版值 · 今日即時 ${fmt(L.attn_z)}</div>`:''}
+      ${zDate?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.25rem;font-family:var(--font-mono)">${md(zDate)} 定版值（警報依據）</div>`:''}
+      ${prov?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.15rem;font-family:var(--font-mono)">${md(L.attn_z_date)} 即時 ${fmt(L.attn_z)} · 未定版，明日才定案</div>`:''}
       ${regimeTag(a.vol_regime, attnAlert)}
     </div>
     <div class="card stat">
