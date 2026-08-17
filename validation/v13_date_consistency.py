@@ -77,6 +77,21 @@ def check(asset):
             problems.append(
                 'vol_regime 沒有 date 欄位 —— 波動 %s%% 實際可能來自更早的交易日，'
                 '與大字並列會造成日期混淆' % vr.get('today_move'))
+        else:
+            # 波動滯後檢查：波動日期應該是「最後一個有收盤價的交易日」。
+            # 若比它更早，代表算法把最新交易日丟掉了（2026-08-18 踩過：
+            # 誤用 ~provisional 過濾價格，顯示 8/14 的 0.385% 而非 8/17 的 2.30%）。
+            closes = asset.get('close') or []
+            last_px = None
+            for k in range(len(closes) - 1, -1, -1):
+                if closes[k] is not None:
+                    last_px = dates[k]
+                    break
+            if last_px and vr['date'] < last_px:
+                problems.append(
+                    '波動日期(%s) 落後最後有收盤價的交易日(%s) —— '
+                    '波動被算成舊資料，使用者會看到嚴重滯後的數字'
+                    % (vr['date'], last_px))
 
     # ── 檢查 4：揭露三個數字的時間跨度（即使都標了日期，跨太多天仍要提醒）──
     stamps = {}
@@ -95,6 +110,14 @@ def check(asset):
             span = (max(uniq), min(uniq))
             info.append('  ⚠ 同卡片並列 %d 個不同日期（%s ~ %s）—— '
                         '每一個都必須在 UI 上標出來' % (len(uniq), span[1], span[0]))
+
+    # ── 檢查 4.5：欄位缺漏 = 這支資產可能是舊快取（抓取失敗時的靜默退回）──
+    # 2026-08-18 踩到：BTC 連線逾時 → 沿用上次資料 → 新欄位全缺，
+    # 但 data.js 照常產出、沒有任何錯誤標記，肉眼完全看不出這支是舊的。
+    if not L.get('attn_z_date') and not L.get('attn_z_settled_date'):
+        problems.append(
+            '日期欄位全缺 —— 這支資產很可能是「抓取失敗後沿用的舊快取」，'
+            '而非本次真正更新的資料')
 
     # ── 檢查 5：未定版天數合理性 ──
     prov = asset.get('provisional') or []

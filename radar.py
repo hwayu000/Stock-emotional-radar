@@ -391,23 +391,31 @@ def analyze(meta: dict, vol: pd.Series, tone: pd.Series) -> dict:
     # 因為市場本身有波動聚集現象（黃金 22.6 年實測：昨日波動前 5% 即可得 1D
     # 4.04x，遠勝注意力的 1.79x），且激增日當天波動本就是平時的 2.11 倍，
     # 混淆確實存在。控制後才知道訊號真正的適用區間。
-    # ⚠️ 波動情境必須與注意力指數取同一天，否則卡片會混日期：
-    #    大字取 8/16 定版 z，波動卻取 8/17 即時值 —— 兩個不同日子疊在同一張卡上，
-    #    使用者無從分辨（2026-08-17 實際踩到）。故此處一律對齊「最後定版日」。
+    # ⚠️ 波動必須標自己的日期 —— 它跟注意力指數常常不是同一天。
+    #
+    # 兩個踩過的坑（2026-08-17/18）：
+    #   ① 卡片三個數字各屬不同日子卻都沒標日期，使用者以為資料壞了。
+    #      → 解法是「標日期」，不是硬把它們對齊到同一天。
+    #   ② 曾試圖用 ~provisional 過濾收盤價來對齊 —— 這是錯的。
+    #      provisional 描述的是「GDELT 新聞量未定版」，與價格無關；
+    #      Yahoo 當日收盤本身是實價。用它過濾價格會把最新交易日整個丟掉，
+    #      導致 8/17 實際波動 2.38% 卻顯示 8/14 的 0.385%（差 6 倍），
+    #      使用者直接回報「波動也太滯後」。
+    #   故：價格只看價格自己有沒有值，取最後一個有前日可比的交易日。
     vol_regime = None
     if "close" in df and df["close"].notna().sum() > 60:
-        dret = (df["close"].pct_change().abs() * 100)
-        # 只取已定版日的收盤變動，與 z_settled 同源
-        dret_settled = dret[~df["provisional"]].dropna()
-        cur = dret.dropna()
-        if len(cur) > 30 and len(dret_settled):
-            today_move = float(dret_settled.iloc[-1])
-            lo, hi = float(cur.quantile(0.50)), float(cur.quantile(0.90))
+        # 先壓掉沒有收盤價的日子（週末/假日），再算相鄰交易日的變動，
+        # 否則 pct_change 會拿週末的 NaN 去比，最新交易日算不出來。
+        cl = df["close"].dropna()
+        dret = (cl.pct_change().abs() * 100).dropna()
+        if len(dret) > 30:
+            today_move = float(dret.iloc[-1])
+            lo, hi = float(dret.quantile(0.50)), float(dret.quantile(0.90))
             vol_regime = {
                 "today_move": round(today_move, 3),
                 "level": "低" if today_move < lo else ("中" if today_move < hi else "高"),
                 "p50": round(lo, 3), "p90": round(hi, 3),
-                "date": dret_settled.index[-1].strftime("%Y-%m-%d"),
+                "date": dret.index[-1].strftime("%Y-%m-%d"),
             }
 
     last = df.dropna(subset=["kl"]).iloc[-1] if df["kl"].notna().any() else df.iloc[-1]
