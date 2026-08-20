@@ -24,40 +24,51 @@
     --font-ui: "Space Grotesk", "PingFang TC", "Microsoft JhengHei UI", system-ui, sans-serif;
     --font-mono: "Space Mono", "SF Mono", "JetBrains Mono", monospace;
     --font-dot: "Doto", "Space Mono", monospace;   /* Ndot 風點陣字 */
-    --accent: #ff6a1a;      /* 橘 LED */
-    --accent-soft: #fff1e8;
+    --accent: #ff6a1a;      /* 橘 LED —— 圖表線條/圓點/填色用（面積大，對比不是問題） */
+    /* ⚠️ --accent 在純白底上只有 2.87:1，未達 AA 大字門檻 3.0，不可拿來寫字。
+       文字一律用 --accent-ink（日間加深、夜間回到亮橘），這是白底化之後才浮現的問題：
+       原本米底 #f4f1ea 比較暗，橘字勉強可讀；換純白後就不行了。 */
+    --accent-soft: #fff0e6;   /* 中性淺橘，非米色（原 #fff1e8 帶黃調） */
     --accent-glow: rgba(255,106,26,.55);
   }
-  /* —— 日間：暖白極簡（大量留白·克制點綴） —— */
+  /* —— 日間：純白極簡（分層只靠描邊，不靠明度差）——
+     ⚠️ 禁用米色/暖褐（#f4f1ea、#eae6dd、#1a1814 這類帶黃調的色號）。
+        米色被普遍認為是「AI 隨手生成」的視覺特徵，會直接折損儀表板的專業度。
+        全站中性灰階：色相統一 220°（極輕微冷調），飽和度 ≤ 13%，不帶任何黃/褐。
+     ⚠️ bg 與 surface 同為純白 → 分層完全依賴 --stroke，
+        因此描邊絕不能再調淡，調淡就會糊成一片（此決策由使用者拍板）。 */
   html[data-theme="light"] {
-    --bg:#f4f1ea; --dot:rgba(60,52,38,.055);
+    --bg:#ffffff; --dot:rgba(16,24,40,.045);
     --surface:#ffffff; --surface-2:rgba(255,255,255,.72);
-    --stroke:#eae6dd; --stroke-hi:#d6d0c4;
-    --text:#1a1814; --text-dim:#6b6459; --text-faint:#a39c8f;
-    --grid:rgba(26,24,20,.06);
-    --c-vol:#1a1814; --c-kl:var(--accent); --c-thresh:#d0342c; --c-price:#1a1814;
-    --c-mark:var(--accent); --c-pos:#3d8a56; --c-neg:#cf4437; --c-attn:#3a6ea5;
-    --chip-pos-bg:rgba(61,138,86,.09); --chip-neg-bg:rgba(207,68,55,.09); --chip-neu-bg:rgba(60,52,38,.055);
-    --tip-bg:#1a1814; --tip-text:#f7f5ef;
-    --seg-on-bg:#1a1814; --seg-on-text:#ffffff;
-    --shadow:0 8px 28px rgba(60,52,38,.045);
+    --stroke:#d5dae1; --stroke-hi:#b6bec9;
+    --text:#101828; --text-dim:#5b6472; --text-faint:#7d8797;
+    --accent-ink:#cc4a00;   /* 文字用深橘 4.62:1 AA */
+    --grid:rgba(16,24,40,.07);
+    --c-vol:#101828; --c-kl:var(--accent); --c-thresh:#d0342c; --c-price:#101828;
+    --c-mark:var(--accent); --c-pos:#2f8552; --c-neg:#cf4437; --c-attn:#2f6ba8;
+    --chip-pos-bg:rgba(47,133,82,.10); --chip-neg-bg:rgba(207,68,55,.10); --chip-neu-bg:rgba(16,24,40,.05);
+    --tip-bg:#101828; --tip-text:#ffffff;
+    --seg-on-bg:#101828; --seg-on-text:#ffffff;
+    --shadow:0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(16,24,40,.055);
   }
-  /* —— 夜間：暖黑極簡 —— */
+  /* —— 夜間：中性黑（同樣去暖調，暗色的米黃更明顯）——
+     暗色沿用明度差分層（純黑底上做不出描邊分層），但色相一併校正到中性。 */
   html[data-theme="dark"] {
-    --bg:#0d0c0b; --dot:rgba(245,240,230,.05);
-    --surface:#171614; --surface-2:rgba(255,255,255,.035);
-    --stroke:#282622; --stroke-hi:#39362f;
-    --text:#f2efe8; --text-dim:#a5a096; --text-faint:#6d6960;
-    --grid:rgba(245,240,230,.06);
-    --c-vol:#f2efe8; --c-kl:var(--accent); --c-thresh:#f0655a; --c-price:#f2efe8;
+    --bg:#0b0d10; --dot:rgba(233,238,245,.05);
+    --surface:#141719; --surface-2:rgba(255,255,255,.035);
+    --stroke:#252a30; --stroke-hi:#363d45;
+    --text:#e9eef5; --text-dim:#9aa3b0; --text-faint:#666f7c;
+    --accent-ink:#ff7a33;   /* 夜間亮橘 7.49:1 */
+    --grid:rgba(233,238,245,.06);
+    --c-vol:#e9eef5; --c-kl:var(--accent); --c-thresh:#f0655a; --c-price:#e9eef5;
     --c-mark:var(--accent); --c-pos:#5ac07f; --c-neg:#f0655a; --c-attn:#6a9bd0;
-    --chip-pos-bg:rgba(90,192,127,.12); --chip-neg-bg:rgba(240,101,90,.12); --chip-neu-bg:rgba(245,240,230,.055);
-    --tip-bg:#f2efe8; --tip-text:#0d0c0b;
-    --seg-on-bg:#f2efe8; --seg-on-text:#0d0c0b;
-    --shadow:0 14px 40px rgba(0,0,0,.45);
+    --chip-pos-bg:rgba(90,192,127,.12); --chip-neg-bg:rgba(240,101,90,.12); --chip-neu-bg:rgba(233,238,245,.055);
+    --tip-bg:#e9eef5; --tip-text:#0b0d10;
+    --seg-on-bg:#e9eef5; --seg-on-text:#0b0d10;
+    --shadow:0 14px 40px rgba(0,0,0,.5);
   }
-  html[data-contrast="high"][data-theme="light"] { --text:#000; --text-dim:#3a382f; }
-  html[data-contrast="high"][data-theme="dark"]  { --text:#fff; --text-dim:#d8d4c8; }
+  html[data-contrast="high"][data-theme="light"] { --text:#000; --text-dim:#333c47; --stroke:#c3cad4; }
+  html[data-contrast="high"][data-theme="dark"]  { --text:#fff; --text-dim:#d3d9e2; }
 
   * { margin:0; padding:0; box-sizing:border-box; }
   *::selection { background:var(--accent); color:#fff; }
@@ -95,7 +106,7 @@
   .brand .tag::before { content:"[ "; } .brand .tag::after { content:" ]"; }
   .head-right { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
   .stamp { font-family:var(--font-mono); font-size:.7rem; letter-spacing:.02em; color:var(--text-faint); text-align:right; line-height:1.7; text-transform:uppercase; }
-  .stamp .stale { color:var(--accent); font-weight:700; }
+  .stamp .stale { color:var(--accent-ink); font-weight:700; }
 
   .iconbtn {
     appearance:none; cursor:pointer; width:2.7rem; height:2.7rem; border-radius:10px; position:relative; overflow:hidden;
@@ -161,7 +172,7 @@
   .stat .hint { font-family:var(--font-mono); font-size:.74rem; color:var(--text-faint); margin-top:.55rem; line-height:1.6; letter-spacing:.02em; }
   .badge { font-family:var(--font-mono); font-size:.64rem; font-weight:700; padding:.24rem .55rem; border-radius:999px; letter-spacing:.06em; text-transform:uppercase; border:1px solid transparent; }
   .badge.ok   { background:transparent; color:var(--c-pos); border-color:var(--c-pos); }
-  .badge.warn { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+  .badge.warn { background:var(--accent-soft); color:var(--accent-ink); border-color:transparent; }
   html[data-theme="dark"] .badge.warn { background:rgba(255,106,26,.14); }
 
   /* ================= Tab 導覽（ALL CAPS + LED 底線） ================= */
@@ -244,7 +255,7 @@
   .rankrow.on::before { transform:scaleY(1); }
   .rankrow:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   .rankrow .rk { font-family:var(--font-dot); font-size:1.5rem; font-weight:700; color:var(--text-faint); text-align:center; }
-  .rankrow.on .rk { color:var(--accent); }
+  .rankrow.on .rk { color:var(--accent-ink); }
   .rankrow .nm { font-size:.98rem; font-weight:600; }
   .rankrow .nm small { display:block; font-family:var(--font-mono); font-weight:400; font-size:.7rem; letter-spacing:.02em; color:var(--text-faint); margin-top:.2rem; }
   /* 方塊分段條（Nothing 招牌）：12 格、2px gap、方角 */
@@ -284,7 +295,7 @@
 
   /* ================= 資訊 tooltip ================= */
   .info { display:inline-flex; width:1.05rem; height:1.05rem; color:var(--text-faint); cursor:help; vertical-align:-2px; flex-shrink:0; }
-  .info:hover { color:var(--accent); }
+  .info:hover { color:var(--accent-ink); }
   .info:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:50%; }
   .info svg { width:100%; height:100%; }
 
@@ -293,7 +304,7 @@
   .plain-block { padding:.9rem 0; border-bottom:1px solid var(--line); }
   .plain-block:last-child { border-bottom:none; }
   .plain-q { font-family:var(--font-mono); font-size:.76rem; letter-spacing:.05em;
-    color:var(--accent); margin-bottom:.55rem; }
+    color:var(--accent-ink); margin-bottom:.55rem; }
   .plain p { font-size:.9rem; line-height:1.85; margin:.35rem 0; color:var(--text); }
   .plain-key { padding:.6rem .8rem; background:var(--accent-soft); border-radius:8px;
     color:var(--text) !important; margin-top:.6rem !important; }
@@ -304,14 +315,14 @@
     padding:.12rem .5rem; border-radius:999px; border:1px solid currentColor; margin-right:.45rem; }
   .plain-list .tag.dim { color:var(--text-dim); }
   .plain-list .tag.pos { color:var(--c-pos); }
-  .plain-list .tag.acc { color:var(--accent); }
+  .plain-list .tag.acc { color:var(--accent-ink); }
   .rigor { margin-top:1.4rem; border-top:1px solid var(--line); padding-top:1rem; }
   .rigor > summary { cursor:pointer; font-family:var(--font-mono); font-size:.76rem;
     letter-spacing:.05em; color:var(--text-dim); padding:.4rem 0; list-style:none; }
   .rigor > summary::-webkit-details-marker { display:none; }
-  .rigor > summary::before { content:'▸ '; color:var(--accent); }
+  .rigor > summary::before { content:'▸ '; color:var(--accent-ink); }
   .rigor[open] > summary::before { content:'▾ '; }
-  .rigor > summary:hover { color:var(--accent); }
+  .rigor > summary:hover { color:var(--accent-ink); }
 
   /* ================= 自訂日期區間面板 ================= */
   .rangepicker {
@@ -352,7 +363,7 @@
   /* 用 text-dim 而非 text-faint：faint 在此字級下對比僅 2.54:1，未達 WCAG AA 4.5:1 */
   .foot { margin-top:2rem; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); line-height:1.8; text-align:center; }
   /* 加底線提升可辨識度：純橘字在深底上對比僅 2.54:1，未達 WCAG AA */
-  .foot a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
+  .foot a { color:var(--accent-ink); text-decoration:underline; text-underline-offset:3px; }
 
   @media (max-width:640px){
     .te-grid{grid-template-columns:1fr;} h1{font-size:1.6rem;}
@@ -743,7 +754,7 @@ function toneColor(a){ const t=a.latest.tone; if(t==null)return 'var(--text)'; r
 function verdictOf(te){
   if (!te) return { txt:'—', sub:'價格數據不足', color:'var(--text-dim)' };
   const nl = te.p_news_to_price < 0.05, pl = te.p_price_to_news < 0.05;
-  if (nl && !pl) return { txt:'新聞領先價格', sub:'敘事正在驅動行情，新聞熱度具有領先參考價值', color:'var(--accent)' };
+  if (nl && !pl) return { txt:'新聞領先價格', sub:'敘事正在驅動行情，新聞熱度具有領先參考價值', color:'var(--accent-ink)' };
   if (pl && !nl) return { txt:'媒體在追行情', sub:'價格先動、新聞跟進——現在的新聞熱度是滯後信號，慎防假熱度', color:'var(--c-kl)' };
   if (nl && pl)  return { txt:'雙向互相強化', sub:'新聞與價格互相推動（反身性），行情可能正在自我加速', color:'var(--c-thresh)' };
   return { txt:'互不領先', sub:'新聞與價格目前互相預測不了對方，新聞熱度沒有方向性參考價值', color:'var(--text-dim)' };
@@ -770,7 +781,7 @@ function regimeTag(vr, isAlert){
   const map = {
     '低': ['var(--text-dim)', '此區間訊號多為雜訊'],
     '中': ['var(--c-pos)',    '訊號最有效的區間'],
-    '高': ['var(--accent)',   '價格已自帶訊號'],
+    '高': ['var(--accent-ink)',   '價格已自帶訊號'],
   };
   const [col, txt] = map[vr.level] || ['var(--text-dim)', ''];
   // 後端已對齊定版日；標日期避免與上方大字混成兩個不同的日子
@@ -803,7 +814,7 @@ function buildStats(a){
   $('stats').innerHTML = `
     <div class="card stat">
       <div class="lbl">注意力指數 ${INFO_ICO('新聞量偏離自身常態的標準差倍數。警戒值 2.5（由事件研究校準：z>2.0 在 3D/5D 無統計顯著性，z>2.5 才穩定顯著）。實證：預測「波動放大」而非漲跌方向。')} <span class="badge ${attnAlert?'warn':'ok'}">${attnAlert?(lvl||'激增'):'正常'}</span>${provTag}</div>
-      <div class="val" style="color:${attnAlert?'var(--accent)':'var(--text)'}">${fmt(zShow)}</div>
+      <div class="val" style="color:${attnAlert?'var(--accent-ink)':'var(--text)'}">${fmt(zShow)}</div>
       ${zDate?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.25rem;font-family:var(--font-mono)">${md(zDate)} 定版值（警報依據）</div>`:''}
       ${prov?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:.15rem;font-family:var(--font-mono)">${md(L.attn_z_date)} 即時 ${fmt(L.attn_z)} · 未定版，明日才定案</div>`:''}
       ${regimeTag(a.vol_regime, attnAlert)}
@@ -1067,7 +1078,7 @@ function buildEvents(a){
   const dir = t1>=0?'偏漲':'偏跌';
   box.innerHTML=`
     <div style="font-size:1rem;line-height:1.75;color:var(--text-dim);margin-bottom:.4rem">
-      共偵測到 <b style="color:var(--accent)">${events.length}</b> 次散度突破。突破後 3 個交易日價格<b style="color:${t1>=0?'var(--c-pos)':'var(--c-neg)'}">${dir}（平均 ${pct(t1)}）</b>。
+      共偵測到 <b style="color:var(--accent-ink)">${events.length}</b> 次散度突破。突破後 3 個交易日價格<b style="color:${t1>=0?'var(--c-pos)':'var(--c-neg)'}">${dir}（平均 ${pct(t1)}）</b>。
     </div>
     ${cardHtml}
     <p style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-faint);margin-top:.9rem;line-height:1.7">
@@ -1231,7 +1242,7 @@ function buildTrust(a){
   const nowLine = lvNow ? ({
     '低': ['var(--text-dim)', `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>低檔</b> —— 這種時候的新聞爆量多半是假警報，不用太在意。`],
     '中': ['var(--c-pos)',    `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>中檔</b> —— 這正是本指標最準的區間，若出現激增值得留意。`],
-    '高': ['var(--accent)',   `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>高檔</b> —— K 線自己已經在跳了，新聞的額外資訊有限。`],
+    '高': ['var(--accent-ink)',   `目前 ${a.name} 當日波動 ${vr.today_move}%，屬<b>高檔</b> —— K 線自己已經在跳了，新聞的額外資訊有限。`],
   }[lvNow] || []) : [];
 
   box.innerHTML = `
@@ -1241,7 +1252,7 @@ function buildTrust(a){
         <div class="plain-q">注意力指數飆高時，K 線會怎樣？</div>
         <p><b style="color:var(--c-neg)">不會告訴你漲還是跌。</b>
            這點測過 15 次全部失敗 —— 新聞熱度預測不了方向。</p>
-        <p><b style="color:var(--accent)">會告訴你「要開始震了」。</b>
+        <p><b style="color:var(--accent-ink)">會告訴你「要開始震了」。</b>
            但幅度沒有想像中大：以黃金為例，平常 3 天動 1.06%，
            激增後動 1.47%，約 <b>1.4 倍</b>。</p>
         <p class="plain-key">講白話：K 線的實體和影線會變長，但往上往下不知道。<br>
@@ -1335,7 +1346,7 @@ function buildTrust(a){
           '大樣本回測：2018-01~2026-08 共 3126 天、55 個事件（z>2.5）、置換檢定 10000 次。全樣本 1D 1.37x(p=.038)／3D 1.39x(p=.006)／5D 1.40x(p=.003)／10D 1.24x(p=.028)。<b>樣本外驗證通過</b>：前半(2018~2022)校準、後半(2022~2026)獨立驗證，3D 1.40x(p=.012)、5D 1.43x(p=.004)，後半段更強，排除過度擬合。<b>方向性 15 組檢定全數不通過——不能預測漲跌</b>。')}
     ${row('注意力指數 · BTC/NVDA', '<b style="color:var(--c-pos);opacity:.7">有證據（僅 1D）</b>',
           '同一套大樣本檢定：BTC 1D 1.42x(p=.011) 樣本外通過，但 3D(p=.090)、5D(p=.368) 皆未通過；NVDA 1D 1.69x(p=.003) 通過，3D(p=.316)、5D(p=.642) 未通過。<b>兩者訊號只撐得住一天</b>，回檢只看隔天即可。AAPL/MSFT 資料抓取中，尚未驗證。')}
-    ${row('先前結論的修正', '<b style="color:var(--accent)">效力被高估</b>',
+    ${row('先前結論的修正', '<b style="color:var(--accent-ink)">效力被高估</b>',
           '一年小樣本曾報 3D 1.47x，大樣本為 1.39x —— 方向正確但幅度縮水。且「D+1/D+3/D+5 回檢」原本套用於所有資產，實際上<b>只適用黃金</b>；BTC 與 NVDA 的訊號 3D 即失效。此為樣本擴充後主動修正，非事後調整。')}
     ${row('散度 KL', '<b style="color:var(--text-dim)">無顯著性・僅供觀察</b>',
           '同一套檢定下，散度突破後波動放大僅 0.98~1.23x、p 值 0.21~0.50，未達顯著。已停止以此發送警報，保留圖表供人工觀察敘事結構變化。')}
@@ -1343,7 +1354,7 @@ function buildTrust(a){
           '散度是純量，敘事「轉樂觀」與「轉悲觀」得分相同但價格意涵相反，方向被丟棄是它測不出訊號的主因之一。加回方向後：突破後 5D 報酬，轉悲觀 +2.63%(n=10) vs 轉樂觀 −1.10%(n=8)。<b>但置換檢定僅 5D 一個期間 p=0.048，1D／3D／10D 皆不顯著</b>——真訊號應多期間一致顯著，此處更像小樣本假象。故僅陳述方向，不做多空解讀，待樣本累積後重驗。')}
     ${row('訊號有效期', 'D+1 ~ D+5，D+8 後回歸常態',
           '衰減曲線：D+0 1.75x → D+1 1.38x → D+2 1.20x → D+3 1.19x → D+4 起回落，D+8 之後與常態無異。故建議回檢時點為 D+1／D+3／D+5。')}
-    ${row('何時該信這訊號', '<b style="color:var(--accent)">當日波動中等時最有效</b>',
+    ${row('何時該信這訊號', '<b style="color:var(--accent-ink)">當日波動中等時最有效</b>',
           '用黃金 22.6 年日線（5683 筆）建立基準後發現：光看「昨日波動前 5%」就能得到 1D 4.04x，遠勝注意力的 1.79x——市場本來就有波動聚集現象。且激增日當天平均波動 2.24% vs 平時 1.06%（2.11x），混淆確實存在。<b>控制當日波動後做層內比較</b>：當日波動低(<0.62%)時 0.99x／0.88x／0.57x <b>無效甚至反向</b>；<b>中等(0.62~2.84%)時 1.69x／1.58x／1.74x，有獨立增量價值</b>；高(>2.84%)時 1.80x／1.40x／1.01x，短期有效但 5D 衰減。結論：市場平靜時的注意力激增多半是雜訊，市場已劇烈波動時價格訊號本身就夠強，<b>此指標的價值在中間地帶——價格還看不出異常、但新聞已經在動</b>。')}
     <h4 style="font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:1.1rem 0 .3rem">結論分級標準</h4>
     <div style="font-size:.78rem;line-height:1.8;color:var(--text-dim);padding:.2rem 0">
@@ -1352,10 +1363,10 @@ function buildTrust(a){
       <span style="color:var(--c-pos);opacity:.6">■ 有證據</span>　多期間顯著但尚未做樣本外驗證　→ 白話層寫「歷史上是這樣，但還沒用新資料驗過」<br>
       <span style="color:var(--text-dim)">■ 線索</span>　僅單期間顯著，或效果隨樣本增加而衰減　→ 白話層寫「可能是碰巧」<br>
       <span style="color:var(--text-dim)">■ 已否定</span>　擴充樣本後不再顯著　→ 白話層直接寫「本來以為有用，資料變多後發現是錯覺」<br>
-      <span style="color:var(--accent)">第四級會確實使用。</span>若散度方向擴充後失效，就寫「已否定」，不改口為「趨勢仍值得參考」。
+      <span style="color:var(--accent-ink)">第四級會確實使用。</span>若散度方向擴充後失效，就寫「已否定」，不改口為「趨勢仍值得參考」。
     </div>
     <div style="margin-top:1.1rem;padding:.75rem .9rem;border:1px solid var(--accent);border-left-width:3px;border-radius:10px;font-size:.8rem;line-height:1.7;color:var(--text);background:transparent">
-      <b style="color:var(--accent)">已知限制</b>：GDELT 只涵蓋公開網路新聞，不含社群媒體與私有終端；語調為英文語料模型，中文報導未納入。
+      <b style="color:var(--accent-ink)">已知限制</b>：GDELT 只涵蓋公開網路新聞，不含社群媒體與私有終端；語調為英文語料模型，中文報導未納入。
       <b>XAU / BTC / NVDA 已完成 8.6 年大樣本驗證</b>（3126 天，事件數 55~121，含樣本外檢定）；
       AAPL / MSFT 語調資料抓取中，仍為一年樣本，其結論待更新。
       本頁所有數字為研究參考，非投資建議。
