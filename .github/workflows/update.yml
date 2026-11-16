@@ -25,7 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      # 排隊等前一輪（GDELT 長輪可達 90+ 分鐘）的 run，github.sha 是觸發當下的舊 commit；
+      # 明確拉 main 最新，避免從過期版本出發
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-python@v5
         with:
@@ -57,8 +61,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/data.js
-          git diff --cached --quiet || git commit -m "auto: update data $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git push
+          git diff --cached --quiet && { echo "no change"; exit 0; }
+          git commit -m "auto: update data $(date -u +'%Y-%m-%d %H:%M UTC')"
+          # 跑 pipeline 期間遠端可能已被其他輪推進；被拒就 rebase 後重推。
+          # rebase 中 -X theirs = 保留本輪剛算出的 data.js（本輪較新）
+          for i in 1 2 3; do
+            git push && exit 0
+            echo "push rejected, rebase & retry ($i)"
+            git fetch origin main
+            git rebase -X theirs origin/main || { git rebase --abort; exit 1; }
+          done
+          exit 1
 
       - uses: actions/cache/save@v4
         if: always()
