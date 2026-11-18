@@ -635,6 +635,67 @@ def build_alert_text(result: dict, prev: dict | None = None) -> str:
     return head + "\n\n" + "\n\n".join(blocks)
 
 
+def build_alert_rich(result: dict, prev: dict | None = None) -> str:
+    """與 build_alert_text 同一份資訊的 Rich Message 版型：每個資產一張表，可信度用引用框，連結改按鈕。"""
+    import html as _h
+    E = _h.escape
+    prev = prev or {}
+    blocks = []
+    for a in flatten_assets(result):
+        dates, latest = a["dates"], a["latest"]
+        was = prev.get(a["id"], {})
+        if not (a["alerts"].get("attention_spike") and not was.get("attention_spike")):
+            continue
+        prior = prior_breach_date(dates, a["attn_z"], ATTN_THRESHOLD)
+        z = latest.get("attn_z_settled", latest["attn_z"])
+        lvl = latest.get("attn_level") or "中"
+        prof = ASSET_PROFILE.get(a["id"], ASSET_PROFILE["_default"])
+        vr = a.get("vol_regime") or {}
+        conf = {
+            "低": "⚠️ 可信度低 —— 市場平靜時的注意力激增多為雜訊（層內實測 1D 0.99x／5D 0.57x，等於無效）",
+            "中": "✅ 可信度高 —— 這是本指標最有效的區間（層內實測 1D 1.69x／3D 1.58x／5D 1.74x）",
+            "高": "◐ 短期可信 —— 但市場已在劇烈波動，價格訊號本身就夠強（層內 1D 1.80x，5D 衰減至 1.01x）",
+        }.get(vr.get("level"), "")
+        tone, bl = latest["tone"], a.get("tone_baseline")
+        if bl:
+            mood = "📈 比平時樂觀" if tone > bl["p90"] else "📉 比平時悲觀" if tone < bl["p10"] else "➡️ 與平時相當"
+            tone_cell = f"<b>{tone}</b>　{mood}<br><sub>平時 {bl['p10']:.2f}～{bl['p90']:.2f}，中位 {bl['median']:.2f}</sub>"
+        else:
+            tone_cell = f"<b>{tone}</b>"
+        rows = [("觸發", f"新聞注意力激增（強度：<b>{E(str(lvl))}</b>）"),
+                ("注意力指數", f"<b>{E(str(z))}</b><br><sub>警戒值 {ATTN_THRESHOLD:.2f}，平時約 0</sub>"),
+                ("歷史行為", f"不預測漲跌方向，但波動放大 {E(prof['exp'])}"),
+                ("建議回檢", E(prof["recheck"])),
+                ("上次同級激增", E(days_ago_str(prior))),
+                ("已定版至", E(str(a.get("quality", {}).get("settled_through", "n/a"))))]
+        if conf:
+            rows.append(("當日波動", f"{E(str(vr.get('today_move')))}%（{E(str(vr.get('level')))}檔）"))
+        rows.append(("媒體語調", tone_cell))
+        blocks.append(f"<h4>{E(a['name'])}</h4><table bordered striped compact>"
+                      + "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>"
+                      + (f"<blockquote>{E(conf)}</blockquote>" if conf else ""))
+    if not blocks:
+        return ""
+    return (f"<h3>⚠️ Ashdata 注意力雷達・警報</h3><footer>數據時間：{E(str(result['generated']))}</footer>"
+            + "".join(blocks)
+            + '<tg-button-row><tg-button type="url" style="primary" url="https://hwayu000.github.io/Stock-emotional-radar/">開注意力雷達</tg-button></tg-button-row>')
+
+
+def send_telegram_rich(rich_html: str, chat_id=None) -> bool:
+    """先送 Rich Message；失敗丟例外，由呼叫端退回純文字版。"""
+    with open(ALERT_CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{cfg['telegram_bot_token']}/sendRichMessage",
+        data=json.dumps({"chat_id": chat_id or cfg["telegram_chat_id"], "rich_message": {"html": rich_html}},
+                        ensure_ascii=False).encode(),
+        headers={**UA, "Content-Type": "application/json"})
+    try:
+        return bool(json.loads(urllib.request.urlopen(req, timeout=30).read()).get("ok"))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(e.read().decode("utf-8", "replace")[:200])
+
+
 def send_telegram(text: str) -> bool:
     if not os.path.exists(ALERT_CONFIG):
         print("（未設定 alert_config.json，略過 Telegram 警報）")
@@ -655,6 +716,13 @@ def run_alerts(result: dict, prev: dict | None = None):
     if not text:
         print("無新警報觸發，不發送 Telegram")
         return
+    if os.path.exists(ALERT_CONFIG):
+        try:  # 先送 Rich Message 版型；失敗退回原本的純文字
+            if send_telegram_rich(build_alert_rich(result, prev)):
+                print("Telegram 警報已發送（Rich）")
+                return
+        except Exception as e:
+            print("Rich 警報失敗，改純文字：", str(e)[:160])
     ok = send_telegram(text)
     print("Telegram 警報已發送" if ok else "Telegram 發送失敗")
 
